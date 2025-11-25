@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
-#include "nimble-nordic-uart.h"
+//#include "nimble-nordic-uart.h"
 #include "settings.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -64,7 +64,7 @@ static void display_turn_off_internal(void) {
   bsp_display_sleep();
   bsp_display_brightness_set(0);
   // Hint BLE to prefer low-power connection parameters while screen is off
-  nordic_uart_set_low_power_mode(true);
+  //nordic_uart_set_low_power_mode(true);
   // If you rely on GPIO wake (touch or PMU IRQ), you may allow light sleep.
   // If wake via polling is required, DO NOT release the lock here.
   // For stability, keep CPU out of light sleep while screen is off.
@@ -124,7 +124,7 @@ void display_manager_turn_on(void) {
   }
 #endif
   // Restore more responsive BLE params when screen is on
-  nordic_uart_set_low_power_mode(false);
+ // nordic_uart_set_low_power_mode(false);
   display_manager_reset_timer();
 }
 

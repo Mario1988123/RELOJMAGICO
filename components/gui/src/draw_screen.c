@@ -157,7 +157,7 @@ lv_obj_t *draw_screen_get(void)
     
     // 👈 CORRECCIÓN: Usar una fuente que exista
     // Opción 1: Si tienes font_bold_16 en ui_fonts.h
-    lv_obj_set_style_text_font(lbl_clear, &font_bold_16, 0);
+    lv_obj_set_style_text_font(lbl_clear, &font_bold_26, 0);
     // Opción 2: Si no tienes font_bold_16, usa montserrat_26 o prueba con:
     // lv_obj_set_style_text_font(lbl_clear, &lv_font_montserrat_14, 0);
     // Opción 3: Usar la fuente por defecto

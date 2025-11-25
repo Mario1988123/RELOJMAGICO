@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS "ble_sync.c"
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES bt nvs_flash bsp_extra nimble-nordic-uart json sensors esp_event gui display_manager
+    REQUIRES bt nvs_flash bsp_extra esp_event json sensors gui nimble-nordic-uart
 )

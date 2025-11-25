@@ -10,26 +10,34 @@
 
 static const char *_TAG = "NORDIC UART";
 
-// #define CONFIG_NORDIC_UART_MAX_LINE_LENGTH 256
-// #define CONFIG_NORDIC_UART_RX_BUFFER_SIZE 4096
+// Declaración de la función interna de bajo nivel
+// (implementada en nimble.c)
+esp_err_t _nordic_uart_send(const char *message);
 
-// Split the message in BLE_SEND_MTU and send it.
-esp_err_t nordic_uart_send(const char *message) { //
-  return _nordic_uart_send(message);
+// Enviar texto por el servicio Nordic UART
+esp_err_t nordic_uart_send(const char *message)
+{
+    return _nordic_uart_send(message);
 }
 
-esp_err_t nordic_uart_sendln(const char *message) {
-  if (nordic_uart_send(message) != ESP_OK)
-    return ESP_FAIL;
-  if (nordic_uart_send("\r\n") != ESP_OK)
-    return ESP_FAIL;
-  return ESP_OK;
+esp_err_t nordic_uart_sendln(const char *message)
+{
+    if (nordic_uart_send(message) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    if (nordic_uart_send("\r\n") != ESP_OK) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
-esp_err_t nordic_uart_start(const char *device_name, void (*callback)(enum nordic_uart_callback_type callback_type)) {
-  return _nordic_uart_start(device_name, callback);
-}
-
-esp_err_t nordic_uart_stop(void) { //
-  return _nordic_uart_stop();
-}
+/*
+ * IMPORTANTE:
+ *  - NO definimos aquí nordic_uart_start() ni nordic_uart_stop().
+ *  - Esas funciones ya están implementadas en nimble.c.
+ *  - Sólo deben existir allí (y estar declaradas en nimble-nordic-uart.h).
+ *
+ *  Esto evita:
+ *    - multiple definition of `nordic_uart_start` / `nordic_uart_stop`
+ *    - undefined reference to `_nordic_uart_start`
+ */

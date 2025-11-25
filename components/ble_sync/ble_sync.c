@@ -4,15 +4,18 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
+
 #include "bsp_power.h"
 #include "cJSON.h"
 #include "esp_err.h"
 #include "esp_log.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
-#include "nimble-nordic-uart.h"
+
+#include "nimble-nordic-uart.h"     // BLE REAL
 #include "rtc_lib.h"
 #include "esp-bsp.h"
 #include "sensors.h"
@@ -41,10 +44,10 @@ static void notif_async_cb(void* p)
 
 static const char* TAG = "BLE_SYNC";
 
-// Define event base for BLE connection status
+// BLE event base
 ESP_EVENT_DEFINE_BASE(BLE_SYNC_EVENT_BASE);
 
-// Track BLE connection state to gate periodic status updates
+// BLE states
 static volatile bool s_ble_connected = false;
 static TimerHandle_t s_status_timer = NULL;
 static TimerHandle_t s_time_sync_timer = NULL;
@@ -63,54 +66,51 @@ static void status_timer_cb(TimerHandle_t xTimer)
 static void time_sync_timer_cb(TimerHandle_t xTimer)
 {
     (void)xTimer;
-    // Send the time sync request now that the link is fully up
+
     const char* sync_cmd = "{\"cmd\":\"time_sync\"}\n";
-    (void)nordic_uart_sendln(sync_cmd);
+    nordic_uart_sendln(sync_cmd);
     ESP_LOGI(TAG, "Requested time sync on connect (delayed)");
 }
 
 static void handle_notification_fields(const char* timestamp,
-    const char* app,
-    const char* title,
-    const char* message)
+                                       const char* app,
+                                       const char* title,
+                                       const char* message)
 {
-    ESP_LOGI(TAG, "Notification: app='%s' title='%s' message='%s' ts='%s'",
-        app ? app : "", title ? title : "", message ? message : "", timestamp ? timestamp : "");
+    ESP_LOGI(TAG, "Notification: app='%s' title='%s' msg='%s' ts='%s'",
+             app, title, message, timestamp);
 
-    // Wake display for visibility and ensure LVGL is running
     display_manager_turn_on();
-    // Try to acquire LVGL lock with a reasonable timeout; avoid calling
-    // LVGL APIs without the lock to prevent races when the display is turning off.
+
     bool locked = false;
     for (int i = 0; i < 3 && !locked; ++i) {
         locked = bsp_display_lock(150);
         if (!locked) vTaskDelay(pdMS_TO_TICKS(10));
     }
+
     if (locked) {
         ui_show_messages_tile();
         notifications_show(app, title, message, timestamp);
         bsp_display_unlock();
     } else {
-        // Fallback: defer safely to LVGL thread by copying strings
-        notif_async_t* ctx = (notif_async_t*)calloc(1, sizeof(notif_async_t));
+        notif_async_t* ctx = calloc(1, sizeof(notif_async_t));
         if (ctx) {
-            ctx->ts = timestamp ? strdup(timestamp) : NULL;
-            ctx->app = app ? strdup(app) : NULL;
-            ctx->title = title ? strdup(title) : NULL;
-            ctx->msg = message ? strdup(message) : NULL;
+            ctx->ts    = timestamp ? strdup(timestamp) : NULL;
+            ctx->app   = app       ? strdup(app)       : NULL;
+            ctx->title = title     ? strdup(title)     : NULL;
+            ctx->msg   = message   ? strdup(message)   : NULL;
             lv_async_call(notif_async_cb, ctx);
         }
     }
 
-    // Play notification sound if enabled
     audio_alert_notify();
 }
 
 static void process_one_json_object(const char* json, size_t len)
 {
-    // cJSON requires a C-string; ensure local null-terminated copy for parsing
-    char* tmp = (char*)malloc(len + 1);
+    char* tmp = malloc(len + 1);
     if (!tmp) return;
+
     memcpy(tmp, json, len);
     tmp[len] = '\0';
 
@@ -120,38 +120,34 @@ static void process_one_json_object(const char* json, size_t len)
         return;
     }
 
-    // Existing handlers (datetime, notification, status)
     cJSON* datetime = cJSON_GetObjectItem(root, "datetime");
     if (cJSON_IsString(datetime)) {
-        int year, month, day, hour, minute, second;
-        if (sscanf(datetime->valuestring, "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &minute, &second) == 6) {
+        int y, m, d, h, mi, s;
+        if (sscanf(datetime->valuestring, "%d-%d-%dT%d:%d:%d",
+                   &y, &m, &d, &h, &mi, &s) == 6) {
             struct tm t = {
-                .tm_year = year,
-                .tm_mon = month,
-                .tm_mday = day,
-                .tm_hour = hour,
-                .tm_min = minute,
-                .tm_sec = second };
+                .tm_year = y,
+                .tm_mon  = m,
+                .tm_mday = d,
+                .tm_hour = h,
+                .tm_min  = mi,
+                .tm_sec  = s
+            };
             rtc_set_time(&t);
-            ESP_LOGI(TAG, "RTC updated");
         }
     }
 
-    cJSON* notification = cJSON_GetObjectItem(root, "notification");
-    if (cJSON_IsString(notification)) {
-        ESP_LOGI(TAG, "Notification");
-        cJSON* app = cJSON_GetObjectItem(root, "app");
-        cJSON* title = cJSON_GetObjectItem(root, "title");
-        cJSON* message = cJSON_GetObjectItem(root, "message");
-        const char* app_s = cJSON_IsString(app) ? app->valuestring : "";
-        const char* title_s = cJSON_IsString(title) ? title->valuestring : "";
-        const char* msg_s = cJSON_IsString(message) ? message->valuestring : "";
-        handle_notification_fields(notification->valuestring, app_s, title_s, msg_s);
+    cJSON* notif = cJSON_GetObjectItem(root, "notification");
+    if (cJSON_IsString(notif)) {
+        handle_notification_fields(
+            notif->valuestring,
+            cJSON_GetObjectItem(root, "app")->valuestring,
+            cJSON_GetObjectItem(root, "title")->valuestring,
+            cJSON_GetObjectItem(root, "message")->valuestring);
     }
 
     cJSON* status = cJSON_GetObjectItem(root, "status");
     if (cJSON_IsString(status)) {
-        ESP_LOGI(TAG, "Status");
         ble_sync_send_status(bsp_power_get_battery_percent(), bsp_power_is_charging());
     }
 
@@ -159,93 +155,81 @@ static void process_one_json_object(const char* json, size_t len)
     free(tmp);
 }
 
-void uartTask(void* parameter) {
+void uartTask(void* parameter)
+{
+    (void)parameter;
     static char mbuf[CONFIG_NORDIC_UART_MAX_LINE_LENGTH + 1];
 
     for (;;) {
         size_t item_size;
-        if (nordic_uart_rx_buf_handle) {
-            const char* item = (char*)xRingbufferReceive(nordic_uart_rx_buf_handle, &item_size, portMAX_DELAY);
+        const char* item = xRingbufferReceive(nordic_uart_rx_buf_handle,
+                                              &item_size,
+                                              portMAX_DELAY);
 
-            if (item) {
-                memcpy(mbuf, item, item_size);
-                mbuf[item_size] = '\0';
-                vRingbufferReturnItem(nordic_uart_rx_buf_handle, (void*)item);
+        if (item) {
+            memcpy(mbuf, item, item_size);
+            mbuf[item_size] = '\0';
+            vRingbufferReturnItem(nordic_uart_rx_buf_handle, (void*)item);
 
-                ESP_LOGI(TAG, "Received chunk: %u bytes", (unsigned)item_size);
-                ESP_LOGI(TAG, "Received buffer: %s", mbuf);
-
-                process_one_json_object(mbuf, item_size);
-
-            }
-        }
-        else {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            process_one_json_object(mbuf, item_size);
         }
     }
-
-    vTaskDelete(NULL);
 }
 
-static void nordic_uart_callback(enum nordic_uart_callback_type callback_type) {
-    switch (callback_type) {
-    case NORDIC_UART_CONNECTED:
-        ESP_LOGI(TAG, "Nordic UART connected");
+/* Callback con el tipo real que define nimble-nordic-uart.h:
+ * enum nordic_uart_callback_type { NORDIC_UART_CONNECTED, NORDIC_UART_DISCONNECTED, ... }
+ */
+static void nordic_uart_callback(enum nordic_uart_callback_type type)
+{
+    if (type == NORDIC_UART_CONNECTED) {
+
+        ESP_LOGI(TAG, "BLE CONNECTED");
         s_ble_connected = true;
+
         (void)esp_event_post(BLE_SYNC_EVENT_BASE, BLE_SYNC_EVT_CONNECTED, NULL, 0, 0);
-        // Optionally send immediate status upon connect
+
         ble_sync_send_status(bsp_power_get_battery_percent(), bsp_power_is_charging());
 
-        // Minimize time/date requests: if RTC is earlier than 2025-02-02, request sync once on connect
-        {
-            bool need_sync = false;
-            // Use direct RTC helpers for clarity
-            int y = rtc_get_year();
-            int m = rtc_get_month();
-            int d = rtc_get_day();
-            if (y <= 0 || m <= 0 || d <= 0) {
-                need_sync = true;
-            } else {
-                int cur = y * 10000 + m * 100 + d;
-                const int threshold = 2025 * 10000 + 2 * 100 + 2; // 2025-02-02
-                if (cur < threshold) need_sync = true;
+        bool need_sync = false;
+
+        int y = rtc_get_year();
+        int m = rtc_get_month();
+        int d = rtc_get_day();
+
+        if (y <= 0 || m <= 0 || d <= 0) need_sync = true;
+
+        if (need_sync && !s_time_sync_requested) {
+            s_time_sync_requested = true;
+
+            if (!s_time_sync_timer) {
+                s_time_sync_timer = xTimerCreate("ble_sync_time",
+                                                 pdMS_TO_TICKS(1500),
+                                                 pdFALSE,
+                                                 NULL,
+                                                 time_sync_timer_cb);
             }
-            ESP_LOGI(TAG, "RTC date on connect: %04d-%02d-%02d, need_sync=%d", y, m, d, (int)need_sync);
-            if (need_sync && !s_time_sync_requested) {
-                s_time_sync_requested = true;
-                // Fire once shortly after connect to avoid race with ATT setup
-                if (!s_time_sync_timer) {
-                    s_time_sync_timer = xTimerCreate("ble_time_sync", pdMS_TO_TICKS(1500), pdFALSE, NULL, time_sync_timer_cb);
-                }
-                if (s_time_sync_timer) {
-                    xTimerStart(s_time_sync_timer, 0);
-                } else {
-                    // Fallback: send immediately
-                    time_sync_timer_cb(NULL);
-                }
+            if (s_time_sync_timer) {
+                xTimerStart(s_time_sync_timer, 0);
+            } else {
+                time_sync_timer_cb(NULL);
             }
         }
 
-        break;
-    case NORDIC_UART_DISCONNECTED:
-        ESP_LOGI(TAG, "Nordic UART disconnected");
+    } else if (type == NORDIC_UART_DISCONNECTED) {
+        ESP_LOGI(TAG, "BLE DISCONNECTED");
         s_ble_connected = false;
         s_time_sync_requested = false;
-        if (s_time_sync_timer) {
-            xTimerStop(s_time_sync_timer, 0);
-        }
         (void)esp_event_post(BLE_SYNC_EVENT_BASE, BLE_SYNC_EVT_DISCONNECTED, NULL, 0, 0);
-        break;
     }
 }
 
-// Enviar estado em cada evento de energia (file-scope C function, not nested)
 static void power_ble_evt(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
 {
     (void)handler_arg;
     (void)base;
     (void)id;
-    bsp_power_event_payload_t* pl = (bsp_power_event_payload_t*)event_data;
+
+    bsp_power_event_payload_t* pl = event_data;
     if (pl) {
         ble_sync_send_status(pl->battery_percent, pl->charging);
     }
@@ -254,21 +238,19 @@ static void power_ble_evt(void* handler_arg, esp_event_base_t base, int32_t id, 
 esp_err_t ble_sync_init(void)
 {
     esp_err_t err = ble_sync_set_enabled(true);
-    if (err != ESP_OK) {
-        return err;
-    }
+    if (err != ESP_OK) return err;
 
-    xTaskCreate(uartTask, "uartTask", 4000, NULL, 3, NULL);
+    xTaskCreate(uartTask, "uartTask", 4096, NULL, 3, NULL);
 
-    // Periodic status every 5 minutes when connected
     if (!s_status_timer) {
-        s_status_timer = xTimerCreate("ble_status_5m", pdMS_TO_TICKS(5 * 60 * 1000), pdTRUE, NULL, status_timer_cb);
-        if (s_status_timer && s_ble_enabled) {
-            xTimerStart(s_status_timer, 0);
-        }
+        s_status_timer = xTimerCreate("status5m",
+                                      pdMS_TO_TICKS(5 * 60 * 1000),
+                                      pdTRUE,
+                                      NULL,
+                                      status_timer_cb);
+        if (s_status_timer) xTimerStart(s_status_timer, 0);
     }
 
-    // Enviar estado em cada evento de energia
     esp_event_handler_register(BSP_POWER_EVENT_BASE, ESP_EVENT_ANY_ID, power_ble_evt, NULL);
 
     return ESP_OK;
@@ -276,96 +258,51 @@ esp_err_t ble_sync_init(void)
 
 esp_err_t ble_sync_send_status(int battery_percent, bool charging)
 {
-    if (!s_ble_enabled) {
-        return ESP_ERR_INVALID_STATE;
-    }
+    if (!s_ble_enabled) return ESP_ERR_INVALID_STATE;
 
     cJSON* root = cJSON_CreateObject();
-    if (!root) {
-        return ESP_FAIL;
-    }
+    if (!root) return ESP_FAIL;
 
     cJSON_AddNumberToObject(root, "battery", battery_percent);
     cJSON_AddBoolToObject(root, "charging", charging);
-    // Include VBUS presence for richer client status
-    bool vbus = (bsp_power_get_vbus_voltage_mv() > 0);
-    cJSON_AddBoolToObject(root, "vbus", vbus);
     cJSON_AddNumberToObject(root, "steps", sensors_get_step_count());
 
-    char* json_str = cJSON_PrintUnformatted(root);
+    char* json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
-    if (!json_str) {
-        return ESP_FAIL;
-    }
 
-    esp_err_t err = nordic_uart_sendln(json_str);
-    free(json_str);
+    if (!json) return ESP_FAIL;
+
+    esp_err_t err = nordic_uart_sendln(json);
+    free(json);
+
     return err;
 }
 
 esp_err_t ble_sync_set_enabled(bool enabled)
 {
-    if (enabled == s_ble_enabled) {
-        return ESP_OK;
-    }
+    if (enabled == s_ble_enabled) return ESP_OK;
 
     if (enabled) {
-        s_ble_connected = false;
+
         if (!s_ble_stack_started) {
+
             esp_err_t err = nordic_uart_start("ESP32 S3 Watch", nordic_uart_callback);
-            if (err == ESP_FAIL && _nordic_uart_linebuf_initialized()) {
-                ESP_LOGW(TAG, "Start failed: buffers still allocated, resetting");
-                _nordic_uart_buf_deinit();
-                err = nordic_uart_start("ESP32 S3 Watch", nordic_uart_callback);
-            }
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to start BLE stack: %s", esp_err_to_name(err));
-                return err;
-            }
+            if (err != ESP_OK) return err;
+
             s_ble_stack_started = true;
         }
 
         s_ble_enabled = true;
-        s_time_sync_requested = false;
+        nordic_uart_set_advertising_enabled(true);
 
-        esp_err_t adv_err = nordic_uart_set_advertising_enabled(true);
-        if (adv_err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to start advertising: %s", esp_err_to_name(adv_err));
-            s_ble_enabled = false;
-            return adv_err;
-        }
-
-        if (s_status_timer) {
-            xTimerStart(s_status_timer, 0);
-        }
-        ESP_LOGI(TAG, "BLE enabled");
         return ESP_OK;
     }
 
     s_ble_enabled = false;
     s_ble_connected = false;
-    s_time_sync_requested = false;
+    nordic_uart_set_advertising_enabled(false);
+    nordic_uart_disconnect();
 
-    if (s_status_timer) {
-        xTimerStop(s_status_timer, 0);
-    }
-    if (s_time_sync_timer) {
-        xTimerStop(s_time_sync_timer, 0);
-    }
-
-    if (s_ble_stack_started) {
-        esp_err_t adv_err = nordic_uart_set_advertising_enabled(false);
-        if (adv_err != ESP_OK) {
-            ESP_LOGW(TAG, "Stopping advertising returned %s", esp_err_to_name(adv_err));
-        }
-        esp_err_t disc_err = nordic_uart_disconnect();
-        if (disc_err != ESP_OK) {
-            ESP_LOGW(TAG, "Disconnect returned %s", esp_err_to_name(disc_err));
-        }
-    }
-
-    (void)esp_event_post(BLE_SYNC_EVENT_BASE, BLE_SYNC_EVT_DISCONNECTED, NULL, 0, 0);
-    ESP_LOGI(TAG, "BLE disabled");
     return ESP_OK;
 }
 

@@ -3,8 +3,12 @@ idf_component_register(
         lwmalloc.c
         main.cpp
     INCLUDE_DIRS "."
-    REQUIRES ble_sync gui sensors settings bsp_extra esp_event audio_alert
+    REQUIRES
+        gui
+        sensors
+        settings
+        bsp_extra
+        esp_event
+        audio_alert
+        ble_mouse_hid
 )
-
-## enable the next line to upload the spiffs content
-spiffs_create_partition_image(storage ../spiffs FLASH_IN_PROJECT)

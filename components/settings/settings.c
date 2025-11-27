@@ -15,24 +15,29 @@
 #include "cJSON.h"
 
 static const char *TAG = "SETTINGS";
-static uint8_t brightness = 30;
-static uint32_t display_timeout_ms = 30000;
-static bool sound_enabled = true;
-static bool bluetooth_enabled = true;
-static uint8_t notify_volume = 100; // percent 0..100 (louder default)
-static uint32_t step_goal = 8000;
-static bool spiffs_ready = false;
+
+// Valores por defecto en RAM
+static uint8_t  brightness          = 30;
+static uint32_t display_timeout_ms  = 300000;   // 5 minutos por defecto
+static bool     sound_enabled       = true;
+static bool     bluetooth_enabled   = true;     // BLE siempre ON
+static uint8_t  notify_volume       = 100;      // percent 0..100 (louder default)
+static uint32_t step_goal           = 8000;
+static bool     spiffs_ready        = false;
 
 // Debounced save timer (to limit flash writes when sliders change)
 static TimerHandle_t s_save_timer = NULL;
+
 // Forward declarations for internal JSON IO
 static bool settings_write_json(void);
 static bool settings_read_json(void);
+
 static void save_timer_cb(TimerHandle_t xTimer)
 {
     (void)xTimer;
     (void)settings_write_json();
 }
+
 static void schedule_save(void)
 {
     const TickType_t delay_ticks = pdMS_TO_TICKS(10000); // 10 seconds
@@ -181,7 +186,8 @@ static bool settings_read_json(void)
     cJSON_Delete(root);
     // Apply to hardware where relevant
     bsp_display_brightness_set(brightness);
-    ESP_LOGI(TAG, "Settings loaded: br=%u, to=%u, sound=%d", (unsigned)brightness, (unsigned)display_timeout_ms, (int)sound_enabled);
+    ESP_LOGI(TAG, "Settings loaded: br=%u, to=%u, sound=%d",
+             (unsigned)brightness, (unsigned)display_timeout_ms, (int)sound_enabled);
     return true;
 }
 
@@ -196,7 +202,7 @@ void settings_init(void) {
         if (time.tm_year < 2025) { // struct tm year is years since 1900
             ESP_LOGI(TAG, "Time not set, setting to default");
             struct tm default_time = {
-                .tm_year = 2025, // 2024
+                .tm_year = 2025, // 2025
                 .tm_mon = 1,    // January
                 .tm_mday = 1,
                 .tm_hour = 12,
@@ -243,6 +249,15 @@ bool settings_get_sound(void) {
 
 void settings_set_bluetooth_enabled(bool enabled)
 {
+    // ⚠ Para este firmware no queremos que se pueda APAGAR el Bluetooth
+    // desde la interfaz. Si llega "false", lo ignoramos y lo dejamos en true.
+    if (!enabled) {
+        ESP_LOGW(TAG, "Ignoring request to DISABLE Bluetooth (forced ON)");
+        bluetooth_enabled = true;
+        schedule_save();
+        return;
+    }
+
     if (bluetooth_enabled == enabled) {
         return;
     }
@@ -291,12 +306,12 @@ uint32_t settings_get_step_goal(void)
 
 static void apply_defaults(void)
 {
-    brightness = 30;
-    display_timeout_ms = 30000;
-    sound_enabled = true;
-    notify_volume = 100;
-    step_goal = 8000;
-    bluetooth_enabled = true;
+    brightness         = 30;
+    display_timeout_ms = 300000;  // 5 minutos por defecto
+    sound_enabled      = true;
+    notify_volume      = 100;
+    step_goal          = 8000;
+    bluetooth_enabled  = true;    // BLE siempre ON
 }
 
 bool settings_reset_defaults(void)

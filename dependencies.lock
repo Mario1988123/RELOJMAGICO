@@ -161,6 +161,6 @@ direct_dependencies:
 - lvgl/lvgl
 - waveshare/esp32_s3_touch_amoled_2_06
 - waveshare/qmi8658
-manifest_hash: 8546b230d1a75dbdfb3a77c91149f588129e363def2db8ddb9beccc0d5cfe12c
+manifest_hash: 498e6745f3f3c081896f51720c11390cdc7080d261aa733e377d52f993d30e0d
 target: esp32s3
 version: 2.0.0

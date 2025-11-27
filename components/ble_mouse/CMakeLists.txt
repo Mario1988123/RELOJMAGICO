@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "ble_sync_stub.c"
+    SRCS "src/ble_mouse.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_event
+    REQUIRES bt nvs_flash
 )

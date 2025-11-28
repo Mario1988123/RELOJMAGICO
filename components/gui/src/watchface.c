@@ -5,12 +5,14 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "ble_mouse_hid.h"  // 🎯 Para verificar estado HID
 
 #include "ui.h"
 #include "steps_screen.h"
 #include "settings_screen.h"
 #include "notifications.h"
-#include "draw_screen.h"     // prototipo de draw_screen_get()
+#include "draw_screen.h"
+#include "magic_trick_screen.h"  // 🎯 Truco de magia
 #include "lvgl.h"
 
 static const char *TAG = "WATCHFACE";
@@ -51,6 +53,13 @@ static void update_time_task(lv_timer_t* timer)
     }
     if (label_weekday) {
         lv_label_set_text(label_weekday, rtc_get_weekday_short_string());
+    }
+
+    // 🎯 Actualizar icono de Bluetooth basándose en HID Mouse
+    if (img_ble) {
+        bool hid_connected = ble_hid_mouse_is_connected();
+        lv_color_t col = hid_connected ? lv_color_hex(0x3B82F6) : lv_color_hex(0x606060);
+        lv_obj_set_style_img_recolor(img_ble, col, 0);
     }
 
     bsp_display_unlock();
@@ -181,11 +190,19 @@ static void screen_events(lv_event_t *e)
         }
     }
     else if (code == LV_EVENT_SHORT_CLICKED) {
-        // TEST: un toque abre la pantalla de dibujo
+        // Toque corto: abrir pantalla de dibujo/mouse
         ESP_LOGW(TAG, "SHORT CLICK -> abrir draw");
         lv_obj_t *draw = draw_screen_get();
         if (draw) {
             load_screen(watchface_screen, draw, LV_SCR_LOAD_ANIM_FADE_IN);
+        }
+    }
+    else if (code == LV_EVENT_LONG_PRESSED) {
+        // Toque largo (2 segundos): abrir truco de magia
+        ESP_LOGW(TAG, "LONG PRESS -> abrir magic trick");
+        lv_obj_t *magic = magic_trick_screen_get();
+        if (magic) {
+            load_screen(watchface_screen, magic, LV_SCR_LOAD_ANIM_FADE_IN);
         }
     }
 }

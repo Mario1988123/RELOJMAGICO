@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include "lvgl.h"
 #include "ui_fonts.h"
-#include "ble_hid_keyboard.h"
+#include "ble_hid_combined.h"
 #include <stdio.h>
 
 static const char *TAG = "MAGIC_TRICK";
@@ -49,7 +49,7 @@ static void status_timer_cb(lv_timer_t *timer)
     (void)timer;
     if (!s_lbl_status) return;
 
-    bool connected = ble_hid_keyboard_is_connected();
+    bool connected = ble_hid_combined_is_connected();
     if (connected) {
         lv_label_set_text(s_lbl_status, "[Connected]");
         lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x00FF00), 0);
@@ -78,7 +78,7 @@ static void update_display(void)
  * ========================================================== */
 static void send_card_to_phone(void)
 {
-    if (!ble_hid_keyboard_is_connected()) {
+    if (!ble_hid_combined_is_connected()) {
         ESP_LOGW(TAG, "No hay conexión HID Keyboard");
         return;
     }

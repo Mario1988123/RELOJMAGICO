@@ -16,9 +16,8 @@
 #include "settings.h"
 #include "ui.h"
 
-// HID MOUSE y KEYBOARD
-#include "ble_mouse_hid.h"
-#include "ble_hid_keyboard.h"
+// HID Combinado (Mouse + Keyboard en un solo dispositivo)
+#include "ble_hid_combined.h"
 
 // Power management
 #include "esp_wifi.h"
@@ -84,37 +83,30 @@ extern "C" void app_main(void) {
     settings_init();
 
     /* --------------------------------------------------------
-       HID MOUSE BLE — Modo Just Works (sin PIN)
+       HID COMBINADO BLE (Mouse + Keyboard)
+       Emparejamiento con PIN: 1234
        -------------------------------------------------------- */
 
-    ESP_LOGI(TAG, "Starting BLE HID Mouse (Just Works, sin PIN)...");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "  Iniciando BLE HID Combinado");
+    ESP_LOGI(TAG, "  Dispositivo: S3Watch HID");
+    ESP_LOGI(TAG, "  PIN: 1234");
+    ESP_LOGI(TAG, "========================================");
 
-    esp_err_t hid_mouse_err = ble_hid_mouse_init("S3Watch Mouse");
+    // Cambia el segundo parámetro a 'false' para emparejamiento sin PIN
+    esp_err_t hid_err = ble_hid_combined_init("S3Watch HID", true);
 
-    if (hid_mouse_err != ESP_OK) {
-        ESP_LOGE(TAG, "BLE HID Mouse init FAILED: %s",
-                 esp_err_to_name(hid_mouse_err));
+    if (hid_err != ESP_OK) {
+        ESP_LOGE(TAG, "✗ BLE HID init FAILED: %s", esp_err_to_name(hid_err));
     } else {
-        ESP_LOGI(TAG, "BLE HID Mouse READY (Just Works, sin PIN)");
+        ESP_LOGI(TAG, "✓ BLE HID READY!");
+        ESP_LOGI(TAG, "");
+        ESP_LOGI(TAG, ">>> PARA EMPAREJAR:");
+        ESP_LOGI(TAG, ">>> 1. Abre Bluetooth en tu móvil");
+        ESP_LOGI(TAG, ">>> 2. Busca: 'S3Watch HID'");
+        ESP_LOGI(TAG, ">>> 3. Introduce PIN: 1234");
+        ESP_LOGI(TAG, "");
     }
-
-    /* --------------------------------------------------------
-       HID KEYBOARD BLE — Para el truco de magia
-       -------------------------------------------------------- */
-
-    ESP_LOGI(TAG, "Starting BLE HID Keyboard (para Magic Trick)...");
-
-    esp_err_t hid_kb_err = ble_hid_keyboard_init("S3Watch Keyboard");
-
-    if (hid_kb_err != ESP_OK) {
-        ESP_LOGE(TAG, "BLE HID Keyboard init FAILED: %s",
-                 esp_err_to_name(hid_kb_err));
-    } else {
-        ESP_LOGI(TAG, "BLE HID Keyboard READY (para enviar cartas)");
-    }
-
-    // NOTA: Ambos HID están inicializados. El móvil verá dos dispositivos BLE.
-    // Empareja ambos para usar ambas funcionalidades.
 
     /* --------------------------------------------------------
        UI

@@ -268,6 +268,11 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
     ESP_LOGI(TAG, "✓ HID Combinado inicializado: %s (SIN PIN)", s_device_name);
 
+    // FORZAR inicio de advertising (el evento START a veces no se dispara)
+    ESP_LOGI(TAG, "Forzando inicio de advertising...");
+    vTaskDelay(pdMS_TO_TICKS(100));  // Pequeño delay
+    esp_ble_gap_config_adv_data(&s_adv_data);
+
     return ESP_OK;
 }
 

@@ -227,10 +227,13 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
     strncpy(s_device_name, device_name, sizeof(s_device_name) - 1);
     s_use_pin = use_pin;
 
-    if (!s_ble_started) {
-        ESP_LOGI(TAG, "Inicializando BLE...");
+    ESP_LOGI(TAG, "Inicializando BLE HID Combinado...");
 
-        esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+    if (!s_ble_started) {
+        ESP_LOGI(TAG, "Configurando controlador BT...");
+
+        // NO llamar a mem_release aquí, ya se hizo en main
+        // esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
 
         esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
@@ -244,41 +247,26 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
     ESP_ERROR_CHECK(esp_ble_gap_set_device_name(s_device_name));
 
-    // Configurar seguridad
-    if (use_pin) {
-        // Con PIN 1234
-        esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-        esp_ble_io_cap_t iocap = ESP_IO_CAP_OUT;  // Display only (mostramos PIN)
-        uint8_t key_size = 16;
-        uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-        uint8_t resp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-        uint32_t passkey = 1234;
+    // Configurar seguridad - SIEMPRE SIN PIN para empezar
+    ESP_LOGI(TAG, "Configurando seguridad (SIN PIN)...");
 
-        esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(iocap));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &resp_key, sizeof(resp_key));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(passkey));
-    } else {
-        // Sin PIN (Just Works)
-        esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_ONLY;
-        esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
-        uint8_t key_size = 16;
-        uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-        uint8_t resp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+    esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_BOND;
+    esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
+    uint8_t key_size = 16;
+    uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+    uint8_t resp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
 
-        esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(iocap));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
-        esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &resp_key, sizeof(resp_key));
-    }
+    esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(auth_req));
+    esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(iocap));
+    esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(key_size));
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(init_key));
+    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &resp_key, sizeof(resp_key));
 
+    ESP_LOGI(TAG, "Inicializando dispositivo HID...");
     ESP_ERROR_CHECK(esp_hidd_dev_init(&s_hid_config, ESP_HID_TRANSPORT_BLE,
                                       hid_event_handler, &s_hid_dev));
 
-    ESP_LOGI(TAG, "✓ HID Combinado inicializado: %s", s_device_name);
+    ESP_LOGI(TAG, "✓ HID Combinado inicializado: %s (SIN PIN)", s_device_name);
 
     return ESP_OK;
 }

@@ -90,11 +90,11 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  Iniciando BLE HID Combinado");
     ESP_LOGI(TAG, "  Dispositivo: S3Watch HID");
-    ESP_LOGI(TAG, "  PIN: 1234");
+    ESP_LOGI(TAG, "  Modo: SIN PIN (Just Works)");
     ESP_LOGI(TAG, "========================================");
 
-    // Cambia el segundo parámetro a 'false' para emparejamiento sin PIN
-    esp_err_t hid_err = ble_hid_combined_init("S3Watch HID", true);
+    // SIN PIN para que sea más simple
+    esp_err_t hid_err = ble_hid_combined_init("S3Watch HID", false);
 
     if (hid_err != ESP_OK) {
         ESP_LOGE(TAG, "✗ BLE HID init FAILED: %s", esp_err_to_name(hid_err));
@@ -104,7 +104,7 @@ extern "C" void app_main(void) {
         ESP_LOGI(TAG, ">>> PARA EMPAREJAR:");
         ESP_LOGI(TAG, ">>> 1. Abre Bluetooth en tu móvil");
         ESP_LOGI(TAG, ">>> 2. Busca: 'S3Watch HID'");
-        ESP_LOGI(TAG, ">>> 3. Introduce PIN: 1234");
+        ESP_LOGI(TAG, ">>> 3. Pulsa emparejar (SIN PIN)");
         ESP_LOGI(TAG, "");
     }
 

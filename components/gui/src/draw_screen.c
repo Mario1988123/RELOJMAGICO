@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include "lvgl.h"
 #include "ui_fonts.h"
-#include "ble_mouse_hid.h"  // 🎯 API del HID Mouse
+#include "ble_hid_combined.h"  // 🎯 API del HID Combinado
 #include <math.h>
 
 static const char *TAG = "DRAW_SCREEN";
@@ -28,7 +28,7 @@ static void status_timer_cb(lv_timer_t *timer)
     (void)timer;
     if (!s_lbl_status) return;
 
-    bool connected = ble_hid_mouse_is_connected();
+    bool connected = ble_hid_combined_is_connected();
     if (connected) {
         lv_label_set_text(s_lbl_status, s_mouse_mode ? "MOUSE [Connected]" : "DRAW [Connected]");
         lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x00FF00), 0);
@@ -73,7 +73,7 @@ static void draw_area_event_cb(lv_event_t *e)
 
         if (s_mouse_mode) {
             // 🎯 MODO MOUSE: Enviar movimiento al HID
-            if (ble_hid_mouse_is_connected() && (dx != 0 || dy != 0)) {
+            if (ble_hid_combined_is_connected() && (dx != 0 || dy != 0)) {
                 // Escalar movimiento (dividir por 2 para hacerlo más suave)
                 int8_t mouse_dx = (int8_t)(dx / 2);
                 int8_t mouse_dy = (int8_t)(dy / 2);

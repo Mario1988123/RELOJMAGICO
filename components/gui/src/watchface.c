@@ -5,7 +5,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "ble_mouse_hid.h"  // 🎯 Para verificar estado HID
+#include "ble_hid_combined.h"  // 🎯 Para verificar estado HID
 
 #include "ui.h"
 #include "steps_screen.h"
@@ -57,7 +57,7 @@ static void update_time_task(lv_timer_t* timer)
 
     // 🎯 Actualizar icono de Bluetooth basándose en HID Mouse
     if (img_ble) {
-        bool hid_connected = ble_hid_mouse_is_connected();
+        bool hid_connected = ble_hid_combined_is_connected();
         lv_color_t col = hid_connected ? lv_color_hex(0x3B82F6) : lv_color_hex(0x606060);
         lv_obj_set_style_img_recolor(img_ble, col, 0);
     }

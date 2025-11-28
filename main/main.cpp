@@ -16,8 +16,9 @@
 #include "settings.h"
 #include "ui.h"
 
-// HID MOUSE
+// HID MOUSE y KEYBOARD
 #include "ble_mouse_hid.h"
+#include "ble_hid_keyboard.h"
 
 // Power management
 #include "esp_wifi.h"
@@ -87,15 +88,33 @@ extern "C" void app_main(void) {
        -------------------------------------------------------- */
 
     ESP_LOGI(TAG, "Starting BLE HID Mouse (Just Works, sin PIN)...");
-    
-    esp_err_t hid_err = ble_hid_mouse_init("S3Watch Mouse");
 
-    if (hid_err != ESP_OK) {
+    esp_err_t hid_mouse_err = ble_hid_mouse_init("S3Watch Mouse");
+
+    if (hid_mouse_err != ESP_OK) {
         ESP_LOGE(TAG, "BLE HID Mouse init FAILED: %s",
-                 esp_err_to_name(hid_err));
+                 esp_err_to_name(hid_mouse_err));
     } else {
         ESP_LOGI(TAG, "BLE HID Mouse READY (Just Works, sin PIN)");
     }
+
+    /* --------------------------------------------------------
+       HID KEYBOARD BLE — Para el truco de magia
+       -------------------------------------------------------- */
+
+    ESP_LOGI(TAG, "Starting BLE HID Keyboard (para Magic Trick)...");
+
+    esp_err_t hid_kb_err = ble_hid_keyboard_init("S3Watch Keyboard");
+
+    if (hid_kb_err != ESP_OK) {
+        ESP_LOGE(TAG, "BLE HID Keyboard init FAILED: %s",
+                 esp_err_to_name(hid_kb_err));
+    } else {
+        ESP_LOGI(TAG, "BLE HID Keyboard READY (para enviar cartas)");
+    }
+
+    // NOTA: Ambos HID están inicializados. El móvil verá dos dispositivos BLE.
+    // Empareja ambos para usar ambas funcionalidades.
 
     /* --------------------------------------------------------
        UI

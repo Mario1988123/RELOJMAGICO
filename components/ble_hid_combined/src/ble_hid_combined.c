@@ -153,7 +153,7 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
     }
 }
 
-/* Callback GAP con soporte para PIN */
+/* Callback GAP - Aceptar emparejamiento automáticamente */
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     switch (event) {
@@ -165,36 +165,37 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
             ESP_LOGI(TAG, "Advertising BLE OK - Dispositivo: %s", s_device_name);
-            if (s_use_pin) {
-                ESP_LOGI(TAG, "*** EMPAREJAMIENTO CON PIN: 1234 ***");
-            } else {
-                ESP_LOGI(TAG, "*** EMPAREJAMIENTO SIN PIN (Just Works) ***");
-            }
+            ESP_LOGI(TAG, "*** EMPAREJAMIENTO SIN PIN (Just Works) ***");
         }
         break;
 
     case ESP_GAP_BLE_SEC_REQ_EVT:
-        ESP_LOGI(TAG, "Solicitud de seguridad recibida");
+        ESP_LOGI(TAG, "!!! Solicitud de seguridad recibida - ACEPTANDO AUTOMATICAMENTE !!!");
         esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
         break;
 
+    case ESP_GAP_BLE_NC_REQ_EVT:
+        ESP_LOGI(TAG, "!!! Confirmación numérica solicitada - ACEPTANDO AUTOMATICAMENTE !!!");
+        ESP_LOGI(TAG, "    Código: %06" PRIu32, param->ble_security.key_notif.passkey);
+        esp_ble_confirm_reply(param->ble_security.ble_req.bd_addr, true);
+        break;
+
     case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
-        ESP_LOGI(TAG, "Passkey: %06" PRIu32, param->ble_security.key_notif.passkey);
+        ESP_LOGI(TAG, "Passkey notificación: %06" PRIu32, param->ble_security.key_notif.passkey);
         break;
 
     case ESP_GAP_BLE_KEY_EVT:
-        ESP_LOGI(TAG, "Key type: %s", param->ble_security.ble_key.key_type == ESP_LE_KEY_PENC ? "PENC" : "OTHER");
+        ESP_LOGI(TAG, "Key recibida, type: %d", param->ble_security.ble_key.key_type);
         break;
 
     case ESP_GAP_BLE_PASSKEY_REQ_EVT:
-        ESP_LOGI(TAG, "*** INTRODUCE PIN: 1234 en tu móvil ***");
-        esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, 1234);
+        ESP_LOGI(TAG, "Passkey solicitado");
         break;
 
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
         if (param->ble_security.auth_cmpl.success) {
-            ESP_LOGI(TAG, "✓ EMPAREJAMIENTO EXITOSO!");
-            ESP_LOGI(TAG, "  Dirección: %02X:%02X:%02X:%02X:%02X:%02X",
+            ESP_LOGI(TAG, ">>> EMPAREJAMIENTO EXITOSO! <<<");
+            ESP_LOGI(TAG, "    Dirección: %02X:%02X:%02X:%02X:%02X:%02X",
                      param->ble_security.auth_cmpl.bd_addr[0],
                      param->ble_security.auth_cmpl.bd_addr[1],
                      param->ble_security.auth_cmpl.bd_addr[2],
@@ -203,8 +204,8 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                      param->ble_security.auth_cmpl.bd_addr[5]);
             s_connected = true;
         } else {
-            ESP_LOGE(TAG, "✗ EMPAREJAMIENTO FALLIDO, código: 0x%02X",
-                     param->ble_security.auth_cmpl.fail_reason);
+            ESP_LOGE(TAG, "!!! EMPAREJAMIENTO FALLIDO !!!");
+            ESP_LOGE(TAG, "    Código error: 0x%02X", param->ble_security.auth_cmpl.fail_reason);
             s_connected = false;
             esp_ble_gap_start_advertising(&s_adv_params);
         }

@@ -294,7 +294,8 @@ __attribute__((weak)) esp_err_t bsp_extra_init(void)
 
 __attribute__((weak)) esp_err_t rtc_register_read(uint8_t reg, uint8_t *value)
 {
-    ESP_LOGW(TAG, "rtc_register_read() stub – reg=0x%02x, returning 0", reg);
+    // Silenciado - genera demasiado spam en los logs
+    // ESP_LOGW(TAG, "rtc_register_read() stub – reg=0x%02x, returning 0", reg);
     if (value) {
         *value = 0;
     }
@@ -303,7 +304,8 @@ __attribute__((weak)) esp_err_t rtc_register_read(uint8_t reg, uint8_t *value)
 
 __attribute__((weak)) esp_err_t rtc_register_write(uint8_t reg, uint8_t value)
 {
-    ESP_LOGW(TAG, "rtc_register_write() stub – reg=0x%02x, val=0x%02x", reg, value);
+    // Silenciado - genera demasiado spam en los logs
+    // ESP_LOGW(TAG, "rtc_register_write() stub – reg=0x%02x, val=0x%02x", reg, value);
     (void)reg;
     (void)value;
     return ESP_OK;

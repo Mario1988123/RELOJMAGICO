@@ -8,14 +8,12 @@
 static const char *TAG = "MAGIC_TRICK";
 
 static lv_obj_t *s_screen = NULL;
-static lv_obj_t *s_lbl_suit = NULL;     // Palo actual
-static lv_obj_t *s_lbl_value = NULL;    // Valor actual
 static lv_obj_t *s_lbl_status = NULL;   // Estado de conexión
-static lv_obj_t *s_lbl_central = NULL;  // Display central grande
+static lv_obj_t *s_lbl_time = NULL;     // Display central tipo reloj "HH:MM"
 static lv_timer_t *s_status_timer = NULL;
 
-static int s_suit = 1;   // 1=Corazones, 2=Picas, 3=Tréboles, 4=Diamantes
-static int s_value = 1;  // 1=As, 2-10=números, 11=J, 12=Q, 13=K
+static int s_suit = 1;   // 1=Corazones, 2=Picas, 3=Tréboles, 4=Diamantes (mostrado como 01-04)
+static int s_value = 1;  // 1=As, 2-10=números, 11=J, 12=Q, 13=K (mostrado como 01-13)
 
 /* Nombres de palos en español */
 static const char *suit_names[] = {
@@ -64,20 +62,12 @@ static void status_timer_cb(lv_timer_t *timer)
  * ========================================================== */
 static void update_display(void)
 {
-    if (s_lbl_suit && s_suit >= 1 && s_suit <= 4) {
-        lv_label_set_text(s_lbl_suit, suit_names[s_suit]);
-    }
-
-    if (s_lbl_value && s_value >= 1 && s_value <= 13) {
-        lv_label_set_text(s_lbl_value, value_names[s_value]);
-    }
-
-    // Actualizar display central grande
-    if (s_lbl_central && s_suit >= 1 && s_suit <= 4 && s_value >= 1 && s_value <= 13) {
-        char central_text[64];
-        snprintf(central_text, sizeof(central_text), "%s\n%s",
-                 value_names[s_value], suit_names[s_suit]);
-        lv_label_set_text(s_lbl_central, central_text);
+    // Actualizar display central tipo reloj "HH:MM"
+    // HH = palo (01-04), MM = valor (01-13)
+    if (s_lbl_time && s_suit >= 1 && s_suit <= 4 && s_value >= 1 && s_value <= 13) {
+        char time_text[8];
+        snprintf(time_text, sizeof(time_text), "%02d:%02d", s_suit, s_value);
+        lv_label_set_text(s_lbl_time, time_text);
     }
 }
 
@@ -104,44 +94,44 @@ static void send_card_to_phone(void)
 /* ============================================================
  * BOTONES DE CONTROL
  * ========================================================== */
-static void btn_suit_up_cb(lv_event_t *e)
+static void btn_hour_up_cb(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 
     s_suit++;
     if (s_suit > 4) s_suit = 1;
     update_display();
-    ESP_LOGI(TAG, "Palo: %d - %s", s_suit, suit_names[s_suit]);
+    ESP_LOGI(TAG, "Hora (Palo): %02d - %s", s_suit, suit_names[s_suit]);
 }
 
-static void btn_suit_down_cb(lv_event_t *e)
+static void btn_hour_down_cb(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 
     s_suit--;
     if (s_suit < 1) s_suit = 4;
     update_display();
-    ESP_LOGI(TAG, "Palo: %d - %s", s_suit, suit_names[s_suit]);
+    ESP_LOGI(TAG, "Hora (Palo): %02d - %s", s_suit, suit_names[s_suit]);
 }
 
-static void btn_value_up_cb(lv_event_t *e)
+static void btn_minute_up_cb(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 
     s_value++;
     if (s_value > 13) s_value = 1;
     update_display();
-    ESP_LOGI(TAG, "Valor: %d - %s", s_value, value_names[s_value]);
+    ESP_LOGI(TAG, "Minuto (Valor): %02d - %s", s_value, value_names[s_value]);
 }
 
-static void btn_value_down_cb(lv_event_t *e)
+static void btn_minute_down_cb(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 
     s_value--;
     if (s_value < 1) s_value = 13;
     update_display();
-    ESP_LOGI(TAG, "Valor: %d - %s", s_value, value_names[s_value]);
+    ESP_LOGI(TAG, "Minuto (Valor): %02d - %s", s_value, value_names[s_value]);
 }
 
 static void btn_send_cb(lv_event_t *e)
@@ -170,7 +160,7 @@ lv_obj_t *magic_trick_screen_get(void)
     /* Título - MOE en gris oscuro (casi invisible) */
     lv_obj_t *lbl_title = lv_label_create(s_screen);
     lv_label_set_text(lbl_title, "MOE");
-    lv_obj_set_style_text_color(lbl_title, lv_color_hex(0x202020), 0);  // Gris muy oscuro
+    lv_obj_set_style_text_color(lbl_title, lv_color_hex(0x202020), 0);
     lv_obj_set_style_text_font(lbl_title, &font_normal_26, 0);
     lv_obj_set_align(lbl_title, LV_ALIGN_TOP_MID);
     lv_obj_set_y(lbl_title, 5);
@@ -183,121 +173,91 @@ lv_obj_t *magic_trick_screen_get(void)
     lv_obj_set_align(s_lbl_status, LV_ALIGN_TOP_MID);
     lv_obj_set_y(s_lbl_status, 30);
 
-    /* Contenedor para PALO - más compacto arriba */
-    lv_obj_t *cont_suit = lv_obj_create(s_screen);
-    lv_obj_remove_style_all(cont_suit);
-    lv_obj_set_size(cont_suit, 180, 80);
-    lv_obj_align(cont_suit, LV_ALIGN_CENTER, -100, -80);
-    lv_obj_set_flex_flow(cont_suit, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(cont_suit, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    /* ========================================================
+     * DISPLAY CENTRAL TIPO RELOJ "HH:MM"
+     * ======================================================== */
+    s_lbl_time = lv_label_create(s_screen);
+    lv_label_set_text(s_lbl_time, "01:01");
+    lv_obj_set_style_text_color(s_lbl_time, lv_color_hex(0xFFFFFF), 0);  // Blanco para que se vea
+    lv_obj_set_style_text_font(s_lbl_time, &font_bold_42, 0);
+    lv_obj_align(s_lbl_time, LV_ALIGN_CENTER, 0, -20);
 
-    lv_obj_t *lbl_suit_title = lv_label_create(cont_suit);
-    lv_label_set_text(lbl_suit_title, "P");
-    lv_obj_set_style_text_color(lbl_suit_title, lv_color_hex(0x252525), 0);  // Gris oscuro
-    lv_obj_set_style_text_font(lbl_suit_title, &font_normal_26, 0);
+    /* ========================================================
+     * BOTONES DE CONTROL PARA "HORAS" (PALOS) - IZQUIERDA
+     * ======================================================== */
+    /* Botón UP horas */
+    lv_obj_t *btn_hour_up = lv_btn_create(s_screen);
+    lv_obj_set_size(btn_hour_up, 60, 50);
+    lv_obj_align(btn_hour_up, LV_ALIGN_CENTER, -120, -60);
+    lv_obj_set_style_bg_color(btn_hour_up, lv_color_hex(0x202020), 0);
+    lv_obj_set_style_bg_opa(btn_hour_up, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(btn_hour_up, 8, 0);
+    lv_obj_add_event_cb(btn_hour_up, btn_hour_up_cb, LV_EVENT_CLICKED, NULL);
 
-    /* Botón UP para palo - gris oscuro */
-    lv_obj_t *btn_suit_up = lv_btn_create(cont_suit);
-    lv_obj_set_size(btn_suit_up, 50, 30);
-    lv_obj_set_style_bg_color(btn_suit_up, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_bg_opa(btn_suit_up, LV_OPA_COVER, 0);
-    lv_obj_add_event_cb(btn_suit_up, btn_suit_up_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_up1 = lv_label_create(btn_suit_up);
-    lv_label_set_text(lbl_up1, "+");
-    lv_obj_set_style_text_color(lbl_up1, lv_color_hex(0x303030), 0);
-    lv_obj_center(lbl_up1);
+    lv_obj_t *lbl_hour_up = lv_label_create(btn_hour_up);
+    lv_label_set_text(lbl_hour_up, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(lbl_hour_up, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_text_font(lbl_hour_up, &font_normal_26, 0);
+    lv_obj_center(lbl_hour_up);
 
-    /* Display del palo - MÁS GRANDE */
-    s_lbl_suit = lv_label_create(cont_suit);
-    lv_label_set_text(s_lbl_suit, "CORAZONES");
-    lv_obj_set_style_text_color(s_lbl_suit, lv_color_hex(0x404040), 0);  // Gris medio oscuro
-    lv_obj_set_style_text_font(s_lbl_suit, &font_normal_26, 0);
+    /* Botón DOWN horas */
+    lv_obj_t *btn_hour_down = lv_btn_create(s_screen);
+    lv_obj_set_size(btn_hour_down, 60, 50);
+    lv_obj_align(btn_hour_down, LV_ALIGN_CENTER, -120, 20);
+    lv_obj_set_style_bg_color(btn_hour_down, lv_color_hex(0x202020), 0);
+    lv_obj_set_style_bg_opa(btn_hour_down, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(btn_hour_down, 8, 0);
+    lv_obj_add_event_cb(btn_hour_down, btn_hour_down_cb, LV_EVENT_CLICKED, NULL);
 
-    /* Botón DOWN para palo - gris oscuro */
-    lv_obj_t *btn_suit_down = lv_btn_create(cont_suit);
-    lv_obj_set_size(btn_suit_down, 50, 30);
-    lv_obj_set_style_bg_color(btn_suit_down, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_bg_opa(btn_suit_down, LV_OPA_COVER, 0);
-    lv_obj_add_event_cb(btn_suit_down, btn_suit_down_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_down1 = lv_label_create(btn_suit_down);
-    lv_label_set_text(lbl_down1, "-");
-    lv_obj_set_style_text_color(lbl_down1, lv_color_hex(0x303030), 0);
-    lv_obj_center(lbl_down1);
+    lv_obj_t *lbl_hour_down = lv_label_create(btn_hour_down);
+    lv_label_set_text(lbl_hour_down, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(lbl_hour_down, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_text_font(lbl_hour_down, &font_normal_26, 0);
+    lv_obj_center(lbl_hour_down);
 
-    /* Contenedor para VALOR - más compacto */
-    lv_obj_t *cont_value = lv_obj_create(s_screen);
-    lv_obj_remove_style_all(cont_value);
-    lv_obj_set_size(cont_value, 140, 80);
-    lv_obj_align(cont_value, LV_ALIGN_CENTER, 95, -80);
-    lv_obj_set_flex_flow(cont_value, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(cont_value, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    /* ========================================================
+     * BOTONES DE CONTROL PARA "MINUTOS" (VALORES) - DERECHA
+     * ======================================================== */
+    /* Botón UP minutos */
+    lv_obj_t *btn_minute_up = lv_btn_create(s_screen);
+    lv_obj_set_size(btn_minute_up, 60, 50);
+    lv_obj_align(btn_minute_up, LV_ALIGN_CENTER, 120, -60);
+    lv_obj_set_style_bg_color(btn_minute_up, lv_color_hex(0x202020), 0);
+    lv_obj_set_style_bg_opa(btn_minute_up, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(btn_minute_up, 8, 0);
+    lv_obj_add_event_cb(btn_minute_up, btn_minute_up_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *lbl_value_title = lv_label_create(cont_value);
-    lv_label_set_text(lbl_value_title, "V");
-    lv_obj_set_style_text_color(lbl_value_title, lv_color_hex(0x252525), 0);  // Gris oscuro
-    lv_obj_set_style_text_font(lbl_value_title, &font_normal_26, 0);
+    lv_obj_t *lbl_minute_up = lv_label_create(btn_minute_up);
+    lv_label_set_text(lbl_minute_up, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(lbl_minute_up, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_text_font(lbl_minute_up, &font_normal_26, 0);
+    lv_obj_center(lbl_minute_up);
 
-    /* Botón UP para valor - gris oscuro */
-    lv_obj_t *btn_value_up = lv_btn_create(cont_value);
-    lv_obj_set_size(btn_value_up, 50, 30);
-    lv_obj_set_style_bg_color(btn_value_up, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_bg_opa(btn_value_up, LV_OPA_COVER, 0);
-    lv_obj_add_event_cb(btn_value_up, btn_value_up_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_up2 = lv_label_create(btn_value_up);
-    lv_label_set_text(lbl_up2, "+");
-    lv_obj_set_style_text_color(lbl_up2, lv_color_hex(0x303030), 0);
-    lv_obj_center(lbl_up2);
+    /* Botón DOWN minutos */
+    lv_obj_t *btn_minute_down = lv_btn_create(s_screen);
+    lv_obj_set_size(btn_minute_down, 60, 50);
+    lv_obj_align(btn_minute_down, LV_ALIGN_CENTER, 120, 20);
+    lv_obj_set_style_bg_color(btn_minute_down, lv_color_hex(0x202020), 0);
+    lv_obj_set_style_bg_opa(btn_minute_down, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(btn_minute_down, 8, 0);
+    lv_obj_add_event_cb(btn_minute_down, btn_minute_down_cb, LV_EVENT_CLICKED, NULL);
 
-    /* Display del valor - MUCHO MÁS GRANDE */
-    s_lbl_value = lv_label_create(cont_value);
-    lv_label_set_text(s_lbl_value, "AS");
-    lv_obj_set_style_text_color(s_lbl_value, lv_color_hex(0x505050), 0);  // Gris medio
-    lv_obj_set_style_text_font(s_lbl_value, &font_bold_32, 0);
+    lv_obj_t *lbl_minute_down = lv_label_create(btn_minute_down);
+    lv_label_set_text(lbl_minute_down, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(lbl_minute_down, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_text_font(lbl_minute_down, &font_normal_26, 0);
+    lv_obj_center(lbl_minute_down);
 
-    /* Botón DOWN para valor - gris oscuro */
-    lv_obj_t *btn_value_down = lv_btn_create(cont_value);
-    lv_obj_set_size(btn_value_down, 50, 30);
-    lv_obj_set_style_bg_color(btn_value_down, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_bg_opa(btn_value_down, LV_OPA_COVER, 0);
-    lv_obj_add_event_cb(btn_value_down, btn_value_down_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_down2 = lv_label_create(btn_value_down);
-    lv_label_set_text(lbl_down2, "-");
-    lv_obj_set_style_text_color(lbl_down2, lv_color_hex(0x303030), 0);
-    lv_obj_center(lbl_down2);
-
-    /* ZONA CENTRAL AMPLIADA - Display grande de la carta seleccionada */
-    lv_obj_t *central_display = lv_obj_create(s_screen);
-    lv_obj_remove_style_all(central_display);
-    lv_obj_set_size(central_display, 350, 200);  // MUCHO MÁS GRANDE
-    lv_obj_align(central_display, LV_ALIGN_CENTER, 0, 40);
-    lv_obj_set_style_bg_color(central_display, lv_color_hex(0x0A0A0A), 0);
-    lv_obj_set_style_bg_opa(central_display, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(central_display, 10, 0);
-    lv_obj_set_style_border_width(central_display, 1, 0);
-    lv_obj_set_style_border_color(central_display, lv_color_hex(0x202020), 0);
-
-    /* Texto central - GRANDE y en gris oscuro */
-    s_lbl_central = lv_label_create(central_display);
-    lv_label_set_text(s_lbl_central, "AS\nCORAZONES");
-    lv_obj_set_style_text_color(s_lbl_central, lv_color_hex(0x404040), 0);
-    lv_obj_set_style_text_font(s_lbl_central, &font_bold_42, 0);
-    lv_obj_set_style_text_align(s_lbl_central, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_center(s_lbl_central);
-
-    /* Botón SEND (pequeño, gris oscuro abajo) */
+    /* ========================================================
+     * BOTÓN DE ENVÍO - Pequeño botón de color sin texto
+     * ======================================================== */
     lv_obj_t *btn_send = lv_btn_create(s_screen);
-    lv_obj_set_size(btn_send, 120, 45);
-    lv_obj_align(btn_send, LV_ALIGN_BOTTOM_MID, 0, -15);
-    lv_obj_set_style_bg_color(btn_send, lv_color_hex(0x1A1A1A), 0);
+    lv_obj_set_size(btn_send, 80, 80);
+    lv_obj_align(btn_send, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_style_bg_color(btn_send, lv_color_hex(0x0080FF), 0);  // Azul
     lv_obj_set_style_bg_opa(btn_send, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(btn_send, 8, 0);
+    lv_obj_set_style_radius(btn_send, 40, 0);  // Circular
     lv_obj_add_event_cb(btn_send, btn_send_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *lbl_send = lv_label_create(btn_send);
-    lv_label_set_text(lbl_send, "OK");
-    lv_obj_set_style_text_color(lbl_send, lv_color_hex(0x303030), 0);
-    lv_obj_set_style_text_font(lbl_send, &font_normal_26, 0);
-    lv_obj_center(lbl_send);
 
     /* Crear timer para estado */
     if (!s_status_timer) {
@@ -307,6 +267,6 @@ lv_obj_t *magic_trick_screen_get(void)
 
     update_display();
 
-    ESP_LOGI(TAG, "Pantalla Magic Trick creada");
+    ESP_LOGI(TAG, "Pantalla Magic Trick creada (modo reloj)");
     return s_screen;
 }

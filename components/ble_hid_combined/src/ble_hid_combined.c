@@ -315,40 +315,62 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
 bool ble_hid_combined_is_connected(void)
 {
-    // Usar nuestra variable de estado en lugar de esp_hidd_dev_connected()
-    // porque esp_hidd_dev_connected() puede no actualizarse correctamente
+    // FIX: Confiar SOLO en esp_hidd_dev_connected() como fuente de verdad
+    // El evento ESP_HIDD_CONNECT_EVENT a veces no se dispara después del emparejamiento
     bool hid_connected = s_hid_dev ? esp_hidd_dev_connected(s_hid_dev) : false;
-    bool result = s_connected && hid_connected;
+
+    // Sincronizar s_connected con el estado real del HID
+    if (hid_connected && !s_connected) {
+        ESP_LOGI(TAG, "!!! CONEXION HID DETECTADA (sin evento) - actualizando estado !!!");
+        s_connected = true;
+    } else if (!hid_connected && s_connected) {
+        ESP_LOGW(TAG, "!!! DESCONEXION HID DETECTADA - actualizando estado !!!");
+        s_connected = false;
+    }
 
     // Log solo cuando cambia el estado (evitar spam)
     static bool last_state = false;
-    if (result != last_state) {
-        ESP_LOGI(TAG, "Estado conexión cambió: %s (s_connected=%d, esp_hidd=%d)",
-                 result ? "CONECTADO" : "DESCONECTADO", s_connected, hid_connected);
-        last_state = result;
+    if (hid_connected != last_state) {
+        ESP_LOGI(TAG, "Estado conexión cambió: %s", hid_connected ? "CONECTADO" : "DESCONECTADO");
+        last_state = hid_connected;
     }
 
-    return result;
+    return hid_connected;
 }
 
 /* Mouse functions */
 void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 {
-    if (!s_hid_dev || !esp_hidd_dev_connected(s_hid_dev)) {
-        ESP_LOGW(TAG, "Mouse move ignorado: dev=%p connected=%d", s_hid_dev,
-                 s_hid_dev ? esp_hidd_dev_connected(s_hid_dev) : 0);
+    // Verificar estado detalladamente
+    static int warning_count = 0;
+
+    if (!s_hid_dev) {
+        if (warning_count++ < 5) {
+            ESP_LOGE(TAG, "❌ Mouse move RECHAZADO: s_hid_dev es NULL");
+        }
         return;
     }
+
+    bool connected = esp_hidd_dev_connected(s_hid_dev);
+    if (!connected) {
+        if (warning_count++ < 5) {
+            ESP_LOGW(TAG, "❌ Mouse move RECHAZADO: HID no conectado (s_connected=%d, esp_hidd=%d)",
+                     s_connected, connected);
+        }
+        return;
+    }
+
+    // Reset warning counter on successful connection
+    warning_count = 0;
 
     // Report format: [Buttons, X, Y, Wheel] - SIN Report ID en el buffer
     uint8_t report[4] = {0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
     esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
 
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Error enviando mouse move: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "✓ Mouse enviado: dx=%d, dy=%d, wheel=%d", dx, dy, wheel);
+        ESP_LOGE(TAG, "❌ Error enviando mouse: %s", esp_err_to_name(ret));
     }
+    // Reducir spam de logs exitosos
 }
 
 void ble_hid_mouse_buttons(bool left, bool right, bool middle)

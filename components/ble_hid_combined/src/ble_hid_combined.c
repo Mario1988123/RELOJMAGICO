@@ -133,10 +133,15 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         ESP_LOGI(TAG, "║                                            ║");
         ESP_LOGI(TAG, "╚════════════════════════════════════════════╝");
         s_connected = true;
+        // Marcar conexión segura si el host no inicia pairing explícito
+        if (!s_sec_conn) {
+            ESP_LOGW(TAG, "Conexión HID sin AUTH_CMPL; habilitando tráfico HID de todos modos");
+            s_sec_conn = true;
+        }
         // NUEVO: Incrementar ID de conexión
         s_hid_conn_id++;
         ESP_LOGI(TAG, ">>> ID de conexión HID: %d", s_hid_conn_id);
-        ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse");
+        ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse/keyboard");
         break;
 
     case ESP_HIDD_DISCONNECT_EVENT:
@@ -443,32 +448,33 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
 bool ble_hid_combined_is_connected(void)
 {
-    // ✅ SOLUCIÓN CORRECTA (basada en ejemplo oficial ESP-IDF):
-    // NO usar esp_hidd_dev_connected() - no es confiable en ESP32
-    // Usar flag s_sec_conn que se setea en ESP_GAP_BLE_AUTH_CMPL_EVT
+    // ✅ SOLUCIÓN MEJORADA: Usar múltiples indicadores de conexión
+    // - s_connected: Flag local (seteado en ESP_HIDD_CONNECT_EVENT)
+    // - esp_hidd_dev_connected(): Estado reportado por el stack BLE
+    // - s_sec_conn: Flag de conexión segura (opcional para algunos hosts)
     //
     // Referencia: https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/ble_hid_device_demo/main/ble_hidd_demo_main.c
-    //
-    // El ejemplo oficial usa:
-    // - hid_conn_id: ID de conexión (seteado en ESP_HIDD_CONNECT_EVENT)
-    // - sec_conn: Flag de conexión segura (seteado en ESP_GAP_BLE_AUTH_CMPL_EVT)
-    // - Verifica sec_conn antes de enviar reportes HID
 
     static int check_count = 0;
     static bool last_state = false;
 
+    bool hid_connected = s_connected;
+    if (s_hid_dev && esp_hidd_dev_connected(s_hid_dev)) {
+        hid_connected = true;
+    }
+
     // Log solo en cambios de estado o primeras 10 verificaciones
-    if (check_count < 10 || s_sec_conn != last_state) {
-        ESP_LOGI(TAG, "[CHECK #%d] s_sec_conn=%s, s_connected=%s, s_hid_conn_id=%d",
+    if (check_count < 10 || hid_connected != last_state) {
+        ESP_LOGI(TAG, "[CHECK #%d] conn=%s (sec_conn=%s, hid_conn_id=%d)",
                  check_count,
-                 s_sec_conn ? "TRUE ✓" : "FALSE ✗",
-                 s_connected ? "TRUE" : "FALSE",
+                 hid_connected ? "TRUE ✓" : "FALSE ✗",
+                 s_sec_conn ? "TRUE" : "FALSE",
                  s_hid_conn_id);
         check_count++;
     }
 
-    last_state = s_sec_conn;
-    return s_sec_conn;
+    last_state = hid_connected;
+    return hid_connected;
 }
 
 /* Mouse functions */
@@ -477,6 +483,13 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
     static int total_attempts = 0;
     static int successful_sends = 0;
     static int failed_sends = 0;
+
+    if (!ble_hid_combined_is_connected()) {
+        if (failed_sends++ < 3) {
+            ESP_LOGW(TAG, "⚠️ Mouse move ignorado: HID no conectado");
+        }
+        return;
+    }
 
     if (!s_hid_dev) {
         if (failed_sends++ < 3) {
@@ -493,13 +506,12 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
     ESP_LOGI(TAG, "    Estado: s_connected=%d, esp_hidd_dev_connected()=%d, s_hid_dev=%p",
              s_connected, connected, s_hid_dev);
 
-    // INTENTAR ENVIAR SIEMPRE (ignorar el estado reportado)
-    // El stack BLE puede estar conectado aunque esp_hidd_dev_connected() retorne false
     // SIN Report ID en el descriptor, así que el report es: [Buttons, X, Y, Wheel]
     uint8_t report[4] = {0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
 
     ESP_LOGI(TAG, "    >>> Llamando esp_hidd_dev_input_set()...");
     // Report ID = 0 (sin Report ID en el descriptor)
+    // IMPORTANTE: NO cambiar a 0x01 - el descriptor NO tiene Report IDs
     esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0, report, sizeof(report));
 
     total_attempts++;
@@ -528,7 +540,7 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 
 void ble_hid_mouse_buttons(bool left, bool right, bool middle)
 {
-    if (!s_hid_dev || !esp_hidd_dev_connected(s_hid_dev)) return;
+    if (!s_hid_dev || !ble_hid_combined_is_connected()) return;
 
     uint8_t buttons = 0;
     if (left) buttons |= 0x01;
@@ -564,7 +576,7 @@ static const uint8_t ascii_to_hid[128] = {
 
 static void send_keyboard_report(uint8_t modifier, uint8_t keycode)
 {
-    if (!s_hid_dev || !esp_hidd_dev_connected(s_hid_dev)) return;
+    if (!s_hid_dev || !ble_hid_combined_is_connected()) return;
 
     // Report format: [Modifier, Reserved, Key1, Key2, Key3, Key4, Key5, Key6] - SIN Report ID
     uint8_t report[8] = {modifier, 0x00, keycode, 0x00, 0x00, 0x00, 0x00, 0x00};

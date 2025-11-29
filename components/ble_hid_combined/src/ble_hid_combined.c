@@ -153,8 +153,8 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         ESP_LOGI(TAG, "║                                            ║");
         ESP_LOGI(TAG, "╚════════════════════════════════════════════╝");
         s_connected = true;
-        // NUEVO: Guardar ID de conexión como en ejemplo oficial ESP-IDF
-        s_hid_conn_id = ed->connect.conn_id;
+        // NUEVO: Incrementar ID de conexión
+        s_hid_conn_id++;
         ESP_LOGI(TAG, ">>> ID de conexión HID: %d", s_hid_conn_id);
         ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse/keyboard");
         break;

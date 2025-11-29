@@ -106,6 +106,13 @@ static const esp_hid_device_config_t s_hid_config = {
     .report_maps_len = 1,
 };
 
+/* UUID del servicio HID - CRÍTICO para que el host detecte el HID */
+static uint8_t s_hid_service_uuid[16] = {
+    /* LSB <------------------------------------> MSB */
+    0xfb, 0x34, 0x9b, 0x5f, 0x80, 0x00, 0x00, 0x80,
+    0x00, 0x10, 0x00, 0x00, 0x12, 0x18, 0x00, 0x00,
+};
+
 static esp_ble_adv_data_t s_adv_data = {
     .set_scan_rsp = false,
     .include_name = true,
@@ -117,8 +124,8 @@ static esp_ble_adv_data_t s_adv_data = {
     .p_manufacturer_data = NULL,
     .service_data_len = 0,
     .p_service_data = NULL,
-    .service_uuid_len = 0,
-    .p_service_uuid = NULL,
+    .service_uuid_len = sizeof(s_hid_service_uuid),
+    .p_service_uuid = s_hid_service_uuid,
     .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
 };
 
@@ -453,7 +460,8 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
     ESP_LOGI(TAG, "✓ HID Combinado inicializado: %s (SIN PIN)", s_device_name);
 
     // FORZAR inicio de advertising (el evento START a veces no se dispara)
-    ESP_LOGI(TAG, "Forzando inicio de advertising...");
+    ESP_LOGI(TAG, "Forzando inicio de advertising con UUID servicio HID (0x1812)...");
+    ESP_LOGI(TAG, "    UUID length: %d bytes", s_adv_data.service_uuid_len);
     vTaskDelay(pdMS_TO_TICKS(100));  // Pequeño delay
     esp_ble_gap_config_adv_data(&s_adv_data);
 

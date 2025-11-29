@@ -14,7 +14,7 @@
 #include "esp_hidd.h"
 #include "esp_hid_common.h"
 
-static const char *TAG = "BLE_HID_COMBINED";
+static const char *TAG = "BLE_HID_MOUSE";
 
 /* Estado interno */
 static bool s_ble_started = false;
@@ -29,13 +29,12 @@ static bool s_pairing_completed = false;    // Flag para tracking de emparejamie
 static TimerHandle_t s_connection_check_timer = NULL;  // Timer para verificar conexión periódicamente
 static int s_connection_check_count = 0;  // Contador de verificaciones
 
-/* HID Report Descriptor COMBINADO (Mouse + Keyboard) */
+/* HID Report Descriptor SOLO MOUSE (mayor compatibilidad) */
 static const uint8_t s_combined_report_map[] = {
-    // Mouse
+    // Mouse - SIN Report ID para mayor compatibilidad
     0x05, 0x01,       // Usage Page (Generic Desktop)
     0x09, 0x02,       // Usage (Mouse)
     0xA1, 0x01,       // Collection (Application)
-    0x85, 0x01,       //   Report ID (1) - MOUSE
     0x09, 0x01,       //   Usage (Pointer)
     0xA1, 0x00,       //   Collection (Physical)
     0x05, 0x09,       //     Usage Page (Buttons)
@@ -59,32 +58,6 @@ static const uint8_t s_combined_report_map[] = {
     0x95, 0x03,       //     Report Count (3)
     0x81, 0x06,       //     Input (Data,Var,Rel)
     0xC0,             //   End Collection
-    0xC0,             // End Collection
-
-    // Keyboard
-    0x05, 0x01,       // Usage Page (Generic Desktop)
-    0x09, 0x06,       // Usage (Keyboard)
-    0xA1, 0x01,       // Collection (Application)
-    0x85, 0x02,       //   Report ID (2) - KEYBOARD
-    0x05, 0x07,       //   Usage Page (Key Codes)
-    0x19, 0xE0,       //   Usage Minimum (224)
-    0x29, 0xE7,       //   Usage Maximum (231)
-    0x15, 0x00,       //   Logical Minimum (0)
-    0x25, 0x01,       //   Logical Maximum (1)
-    0x75, 0x01,       //   Report Size (1)
-    0x95, 0x08,       //   Report Count (8)
-    0x81, 0x02,       //   Input (Data,Var,Abs) - Modifier keys
-    0x95, 0x01,       //   Report Count (1)
-    0x75, 0x08,       //   Report Size (8)
-    0x81, 0x01,       //   Input (Const) - Reserved byte
-    0x95, 0x06,       //   Report Count (6)
-    0x75, 0x08,       //   Report Size (8)
-    0x15, 0x00,       //   Logical Minimum (0)
-    0x25, 0x65,       //   Logical Maximum (101)
-    0x05, 0x07,       //   Usage Page (Key Codes)
-    0x19, 0x00,       //   Usage Minimum (0)
-    0x29, 0x65,       //   Usage Maximum (101)
-    0x81, 0x00,       //   Input (Data,Array)
     0xC0              // End Collection
 };
 
@@ -99,7 +72,7 @@ static const esp_hid_device_config_t s_hid_config = {
     .vendor_id = 0x16C0,
     .product_id = 0x05DF,
     .version = 0x0100,
-    .device_name = "S3Watch HID",
+    .device_name = "S3Watch Mouse",
     .manufacturer_name = "Pablo",
     .serial_number = "0001",
     .report_maps = s_report_maps,
@@ -163,7 +136,7 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         // NUEVO: Incrementar ID de conexión
         s_hid_conn_id++;
         ESP_LOGI(TAG, ">>> ID de conexión HID: %d", s_hid_conn_id);
-        ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse/keyboard");
+        ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse");
         break;
 
     case ESP_HIDD_DISCONNECT_EVENT:
@@ -351,7 +324,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             // Setear flag de conexión segura cuando autenticación es exitosa
             s_sec_conn = true;
             ESP_LOGI(TAG, "    ✅ CONEXIÓN SEGURA ESTABLECIDA (s_sec_conn=true)");
-            ESP_LOGI(TAG, "    >>> El mouse/keyboard ahora puede enviar reportes HID");
+            ESP_LOGI(TAG, "    >>> El mouse ahora puede enviar reportes HID");
 
             // FIX: Forzar actualización de parámetros de conexión para activar HID
             // Basado en https://github.com/asterics/esp32_mouse_keyboard
@@ -418,7 +391,7 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
     strncpy(s_device_name, device_name, sizeof(s_device_name) - 1);
     s_use_pin = use_pin;
 
-    ESP_LOGI(TAG, "Inicializando BLE HID Combinado...");
+    ESP_LOGI(TAG, "Inicializando BLE HID Mouse...");
 
     if (!s_ble_started) {
         ESP_LOGI(TAG, "Configurando controlador BT...");
@@ -457,7 +430,7 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
     ESP_ERROR_CHECK(esp_hidd_dev_init(&s_hid_config, ESP_HID_TRANSPORT_BLE,
                                       hid_event_handler, &s_hid_dev));
 
-    ESP_LOGI(TAG, "✓ HID Combinado inicializado: %s (SIN PIN)", s_device_name);
+    ESP_LOGI(TAG, "✓ HID Mouse inicializado: %s (SIN PIN)", s_device_name);
 
     // FORZAR inicio de advertising (el evento START a veces no se dispara)
     ESP_LOGI(TAG, "Forzando inicio de advertising con UUID servicio HID (0x1812)...");
@@ -522,10 +495,12 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 
     // INTENTAR ENVIAR SIEMPRE (ignorar el estado reportado)
     // El stack BLE puede estar conectado aunque esp_hidd_dev_connected() retorne false
+    // SIN Report ID en el descriptor, así que el report es: [Buttons, X, Y, Wheel]
     uint8_t report[4] = {0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
 
     ESP_LOGI(TAG, "    >>> Llamando esp_hidd_dev_input_set()...");
-    esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
+    // Report ID = 0 (sin Report ID en el descriptor)
+    esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0, report, sizeof(report));
 
     total_attempts++;
 
@@ -560,9 +535,9 @@ void ble_hid_mouse_buttons(bool left, bool right, bool middle)
     if (right) buttons |= 0x02;
     if (middle) buttons |= 0x04;
 
-    // Report format: [Buttons, X, Y, Wheel] - SIN Report ID en el buffer
+    // Report format: [Buttons, X, Y, Wheel] - SIN Report ID
     uint8_t report[4] = {buttons, 0x00, 0x00, 0x00};
-    esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
+    esp_hidd_dev_input_set(s_hid_dev, 0, 0, report, sizeof(report));
 
     ESP_LOGI(TAG, "✓ Mouse buttons: L=%d R=%d M=%d (0x%02X)", left, right, middle, buttons);
 }

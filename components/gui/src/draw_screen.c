@@ -55,6 +55,11 @@ static void draw_area_event_cb(lv_event_t *e)
         s_last_point = current_point;
         s_has_last_point = true;
 
+        ESP_LOGI(TAG, ">>> PRESSED: modo=%s, pos=(%d,%d), conectado=%d",
+                 s_mouse_mode ? "MOUSE" : "DRAW",
+                 current_point.x, current_point.y,
+                 ble_hid_combined_is_connected());
+
         // Si está en modo dibujo, crear punto visual
         if (!s_mouse_mode) {
             lv_obj_t *dot = lv_obj_create(s_draw_area);
@@ -73,19 +78,24 @@ static void draw_area_event_cb(lv_event_t *e)
 
         if (s_mouse_mode) {
             // 🎯 MODO MOUSE: Enviar movimiento al HID
-            if (ble_hid_combined_is_connected() && (dx != 0 || dy != 0)) {
-                // Escalar movimiento (dividir por 2 para hacerlo más suave)
-                int8_t mouse_dx = (int8_t)(dx / 2);
-                int8_t mouse_dy = (int8_t)(dy / 2);
+            if (dx != 0 || dy != 0) {
+                if (!ble_hid_combined_is_connected()) {
+                    ESP_LOGW(TAG, "⚠ Mouse NO conectado - movimiento ignorado");
+                } else {
+                    // Escalar movimiento (dividir por 2 para hacerlo más suave)
+                    int8_t mouse_dx = (int8_t)(dx / 2);
+                    int8_t mouse_dy = (int8_t)(dy / 2);
 
-                // Limitar valores a rango -127 a 127
-                if (mouse_dx > 127) mouse_dx = 127;
-                if (mouse_dx < -127) mouse_dx = -127;
-                if (mouse_dy > 127) mouse_dy = 127;
-                if (mouse_dy < -127) mouse_dy = -127;
+                    // Limitar valores a rango -127 a 127
+                    if (mouse_dx > 127) mouse_dx = 127;
+                    if (mouse_dx < -127) mouse_dx = -127;
+                    if (mouse_dy > 127) mouse_dy = 127;
+                    if (mouse_dy < -127) mouse_dy = -127;
 
-                ble_hid_mouse_move(mouse_dx, mouse_dy, 0);
-                ESP_LOGI(TAG, "Mouse move: dx=%d, dy=%d", mouse_dx, mouse_dy);
+                    ESP_LOGI(TAG, ">>> ENVIANDO Mouse: dx=%d, dy=%d (raw: %d, %d)",
+                             mouse_dx, mouse_dy, dx, dy);
+                    ble_hid_mouse_move(mouse_dx, mouse_dy, 0);
+                }
             }
         } else {
             // MODO DIBUJO: Dibujar línea visual

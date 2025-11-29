@@ -131,24 +131,41 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
     esp_hidd_event_t ev = (esp_hidd_event_t)event_id;
     esp_hidd_event_data_t *ed = (esp_hidd_event_data_t *)event_data;
 
+    ESP_LOGI(TAG, "!!! HID EVENT: %d !!!", (int)ev);
+
     switch (ev) {
     case ESP_HIDD_START_EVENT:
-        ESP_LOGI(TAG, "HID START - iniciando advertising");
+        ESP_LOGI(TAG, ">>> HID START - iniciando advertising");
         esp_ble_gap_config_adv_data(&s_adv_data);
         break;
 
     case ESP_HIDD_CONNECT_EVENT:
-        ESP_LOGI(TAG, "HID CONECTADO!");
+        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, ">>> HID CONECTADO! <<<");
+        ESP_LOGI(TAG, "========================================");
         s_connected = true;
         break;
 
     case ESP_HIDD_DISCONNECT_EVENT:
-        ESP_LOGW(TAG, "HID DESCONECTADO, reason=%d", ed->disconnect.reason);
+        ESP_LOGW(TAG, ">>> HID DESCONECTADO, reason=%d", ed->disconnect.reason);
         s_connected = false;
         esp_ble_gap_start_advertising(&s_adv_params);
         break;
 
+    case ESP_HIDD_OUTPUT_EVENT:
+        ESP_LOGI(TAG, ">>> HID OUTPUT EVENT");
+        break;
+
+    case ESP_HIDD_FEATURE_EVENT:
+        ESP_LOGI(TAG, ">>> HID FEATURE EVENT");
+        break;
+
+    case ESP_HIDD_STOP_EVENT:
+        ESP_LOGI(TAG, ">>> HID STOP EVENT");
+        break;
+
     default:
+        ESP_LOGW(TAG, ">>> HID evento desconocido: %d", (int)ev);
         break;
     }
 }
@@ -156,17 +173,33 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
 /* Callback GAP - Aceptar emparejamiento automáticamente */
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
+    ESP_LOGI(TAG, "!!! GAP EVENT: %d !!!", (int)event);
+
     switch (event) {
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
-        ESP_LOGI(TAG, "ADV configurado, iniciando advertising");
+        ESP_LOGI(TAG, ">>> ADV configurado, iniciando advertising");
         esp_ble_gap_start_advertising(&s_adv_params);
         break;
 
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGI(TAG, "Advertising BLE OK - Dispositivo: %s", s_device_name);
+            ESP_LOGI(TAG, ">>> Advertising BLE OK - Dispositivo: %s", s_device_name);
             ESP_LOGI(TAG, "*** EMPAREJAMIENTO SIN PIN (Just Works) ***");
         }
+        break;
+
+    case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
+        ESP_LOGI(TAG, ">>> Advertising DETENIDO");
+        break;
+
+    case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
+        ESP_LOGI(TAG, ">>> Parámetros de conexión actualizados");
+        ESP_LOGI(TAG, "    Status: %d, Min interval: %d, Max interval: %d, Latency: %d, Timeout: %d",
+                 param->update_conn_params.status,
+                 param->update_conn_params.min_int,
+                 param->update_conn_params.max_int,
+                 param->update_conn_params.latency,
+                 param->update_conn_params.timeout);
         break;
 
     case ESP_GAP_BLE_SEC_REQ_EVT:
@@ -194,6 +227,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
         if (param->ble_security.auth_cmpl.success) {
+            ESP_LOGI(TAG, "========================================");
             ESP_LOGI(TAG, ">>> EMPAREJAMIENTO EXITOSO! <<<");
             ESP_LOGI(TAG, "    Dirección: %02X:%02X:%02X:%02X:%02X:%02X",
                      param->ble_security.auth_cmpl.bd_addr[0],
@@ -202,7 +236,9 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                      param->ble_security.auth_cmpl.bd_addr[3],
                      param->ble_security.auth_cmpl.bd_addr[4],
                      param->ble_security.auth_cmpl.bd_addr[5]);
-            s_connected = true;
+            ESP_LOGI(TAG, "    Esperando conexión HID...");
+            ESP_LOGI(TAG, "========================================");
+            // NO establecer s_connected aquí - esperar ESP_HIDD_CONNECT_EVENT
         } else {
             ESP_LOGE(TAG, "!!! EMPAREJAMIENTO FALLIDO !!!");
             ESP_LOGE(TAG, "    Código error: 0x%02X", param->ble_security.auth_cmpl.fail_reason);
@@ -279,17 +315,40 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
 bool ble_hid_combined_is_connected(void)
 {
-    if (!s_hid_dev) return false;
-    return esp_hidd_dev_connected(s_hid_dev);
+    // Usar nuestra variable de estado en lugar de esp_hidd_dev_connected()
+    // porque esp_hidd_dev_connected() puede no actualizarse correctamente
+    bool hid_connected = s_hid_dev ? esp_hidd_dev_connected(s_hid_dev) : false;
+    bool result = s_connected && hid_connected;
+
+    // Log solo cuando cambia el estado (evitar spam)
+    static bool last_state = false;
+    if (result != last_state) {
+        ESP_LOGI(TAG, "Estado conexión cambió: %s (s_connected=%d, esp_hidd=%d)",
+                 result ? "CONECTADO" : "DESCONECTADO", s_connected, hid_connected);
+        last_state = result;
+    }
+
+    return result;
 }
 
 /* Mouse functions */
 void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 {
-    if (!s_hid_dev || !esp_hidd_dev_connected(s_hid_dev)) return;
+    if (!s_hid_dev || !esp_hidd_dev_connected(s_hid_dev)) {
+        ESP_LOGW(TAG, "Mouse move ignorado: dev=%p connected=%d", s_hid_dev,
+                 s_hid_dev ? esp_hidd_dev_connected(s_hid_dev) : 0);
+        return;
+    }
 
-    uint8_t report[5] = {0x01, 0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
-    esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
+    // Report format: [Buttons, X, Y, Wheel] - SIN Report ID en el buffer
+    uint8_t report[4] = {0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
+    esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error enviando mouse move: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "✓ Mouse enviado: dx=%d, dy=%d, wheel=%d", dx, dy, wheel);
+    }
 }
 
 void ble_hid_mouse_buttons(bool left, bool right, bool middle)
@@ -301,8 +360,11 @@ void ble_hid_mouse_buttons(bool left, bool right, bool middle)
     if (right) buttons |= 0x02;
     if (middle) buttons |= 0x04;
 
-    uint8_t report[5] = {0x01, buttons, 0x00, 0x00, 0x00};
+    // Report format: [Buttons, X, Y, Wheel] - SIN Report ID en el buffer
+    uint8_t report[4] = {buttons, 0x00, 0x00, 0x00};
     esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
+
+    ESP_LOGI(TAG, "✓ Mouse buttons: L=%d R=%d M=%d (0x%02X)", left, right, middle, buttons);
 }
 
 /* Keyboard functions */
@@ -329,12 +391,13 @@ static void send_keyboard_report(uint8_t modifier, uint8_t keycode)
 {
     if (!s_hid_dev || !esp_hidd_dev_connected(s_hid_dev)) return;
 
-    uint8_t report[9] = {0x02, modifier, 0x00, keycode, 0x00, 0x00, 0x00, 0x00, 0x00};
+    // Report format: [Modifier, Reserved, Key1, Key2, Key3, Key4, Key5, Key6] - SIN Report ID
+    uint8_t report[8] = {modifier, 0x00, keycode, 0x00, 0x00, 0x00, 0x00, 0x00};
     esp_hidd_dev_input_set(s_hid_dev, 0, 0x02, report, sizeof(report));
     vTaskDelay(pdMS_TO_TICKS(20));
 
     // Release
-    memset(&report[1], 0, 8);
+    memset(report, 0, 8);
     esp_hidd_dev_input_set(s_hid_dev, 0, 0x02, report, sizeof(report));
     vTaskDelay(pdMS_TO_TICKS(20));
 }

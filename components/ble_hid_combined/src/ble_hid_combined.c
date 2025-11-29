@@ -21,6 +21,8 @@ static bool s_connected = false;
 static bool s_use_pin = false;
 static char s_device_name[32] = {0};
 static esp_hidd_dev_t *s_hid_dev = NULL;
+static esp_bd_addr_t s_peer_bd_addr = {0};  // Dirección del dispositivo conectado
+static bool s_pairing_completed = false;    // Flag para tracking de emparejamiento
 
 /* HID Report Descriptor COMBINADO (Mouse + Keyboard) */
 static const uint8_t s_combined_report_map[] = {
@@ -140,15 +142,24 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         break;
 
     case ESP_HIDD_CONNECT_EVENT:
-        ESP_LOGI(TAG, "========================================");
-        ESP_LOGI(TAG, ">>> HID CONECTADO! <<<");
-        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, "╔════════════════════════════════════════════╗");
+        ESP_LOGI(TAG, "║                                            ║");
+        ESP_LOGI(TAG, "║    ✅ HID CONECTADO EXITOSAMENTE! ✅       ║");
+        ESP_LOGI(TAG, "║                                            ║");
+        ESP_LOGI(TAG, "╚════════════════════════════════════════════╝");
         s_connected = true;
+        ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse/keyboard");
         break;
 
     case ESP_HIDD_DISCONNECT_EVENT:
-        ESP_LOGW(TAG, ">>> HID DESCONECTADO, reason=%d", ed->disconnect.reason);
+        ESP_LOGW(TAG, "╔════════════════════════════════════════════╗");
+        ESP_LOGW(TAG, "║    ⚠️  HID DESCONECTADO                    ║");
+        ESP_LOGW(TAG, "╚════════════════════════════════════════════╝");
+        ESP_LOGW(TAG, ">>> Razón: %d", ed->disconnect.reason);
         s_connected = false;
+        s_pairing_completed = false;
+        memset(s_peer_bd_addr, 0, sizeof(esp_bd_addr_t));
+        ESP_LOGI(TAG, ">>> Reiniciando advertising...");
         esp_ble_gap_start_advertising(&s_adv_params);
         break;
 
@@ -260,6 +271,10 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                      param->ble_security.auth_cmpl.bd_addr[4],
                      param->ble_security.auth_cmpl.bd_addr[5]);
 
+            // Guardar dirección del peer
+            memcpy(s_peer_bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
+            s_pairing_completed = true;
+
             // DIAGNÓSTICO: Verificar inmediatamente el estado HID
             if (s_hid_dev) {
                 bool hid_conn = esp_hidd_dev_connected(s_hid_dev);
@@ -267,12 +282,29 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                          hid_conn ? "CONECTADO ✓" : "NO CONECTADO ✗ (esperando...)");
             }
 
+            // FIX: Forzar actualización de parámetros de conexión para activar HID
+            // Basado en https://github.com/asterics/esp32_mouse_keyboard
+            ESP_LOGI(TAG, "    >>> FORZANDO actualización de parámetros de conexión...");
+            esp_ble_conn_update_params_t conn_params;
+            memcpy(conn_params.bda, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
+            conn_params.min_int = 6;   // 6 * 1.25ms = 7.5ms
+            conn_params.max_int = 6;   // 6 * 1.25ms = 7.5ms
+            conn_params.latency = 0;   // Sin latencia de esclavo
+            conn_params.timeout = 500; // 500 * 10ms = 5000ms = 5s
+
+            esp_err_t ret = esp_ble_gap_update_conn_params(&conn_params);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "    ❌ Error actualizando parámetros: %s", esp_err_to_name(ret));
+            } else {
+                ESP_LOGI(TAG, "    ✓ Solicitud de actualización enviada");
+            }
+
             ESP_LOGI(TAG, "========================================");
-            // NO establecer s_connected aquí - esperar ESP_HIDD_CONNECT_EVENT o que se detecte automáticamente
         } else {
             ESP_LOGE(TAG, "!!! EMPAREJAMIENTO FALLIDO !!!");
             ESP_LOGE(TAG, "    Código error: 0x%02X", param->ble_security.auth_cmpl.fail_reason);
             s_connected = false;
+            s_pairing_completed = false;
             esp_ble_gap_start_advertising(&s_adv_params);
         }
         break;

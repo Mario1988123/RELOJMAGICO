@@ -19,9 +19,11 @@ static const char *TAG = "BLE_HID_COMBINED";
 /* Estado interno */
 static bool s_ble_started = false;
 static bool s_connected = false;
+static bool s_sec_conn = false;  // NUEVO: Flag de conexión segura (como ejemplo oficial ESP-IDF)
 static bool s_use_pin = false;
 static char s_device_name[32] = {0};
 static esp_hidd_dev_t *s_hid_dev = NULL;
+static uint16_t s_hid_conn_id = 0;  // NUEVO: ID de conexión HID (como ejemplo oficial)
 static esp_bd_addr_t s_peer_bd_addr = {0};  // Dirección del dispositivo conectado
 static bool s_pairing_completed = false;    // Flag para tracking de emparejamiento
 static TimerHandle_t s_connection_check_timer = NULL;  // Timer para verificar conexión periódicamente
@@ -151,6 +153,9 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         ESP_LOGI(TAG, "║                                            ║");
         ESP_LOGI(TAG, "╚════════════════════════════════════════════╝");
         s_connected = true;
+        // NUEVO: Guardar ID de conexión como en ejemplo oficial ESP-IDF
+        s_hid_conn_id = ed->connect.conn_id;
+        ESP_LOGI(TAG, ">>> ID de conexión HID: %d", s_hid_conn_id);
         ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse/keyboard");
         break;
 
@@ -160,6 +165,8 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         ESP_LOGW(TAG, "╚════════════════════════════════════════════╝");
         ESP_LOGW(TAG, ">>> Razón: %d", ed->disconnect.reason);
         s_connected = false;
+        s_sec_conn = false;  // NUEVO: Limpiar flag de conexión segura
+        s_hid_conn_id = 0;   // NUEVO: Limpiar ID de conexión
         s_pairing_completed = false;
         memset(s_peer_bd_addr, 0, sizeof(esp_bd_addr_t));
 
@@ -333,12 +340,11 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             memcpy(s_peer_bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
             s_pairing_completed = true;
 
-            // DIAGNÓSTICO: Verificar inmediatamente el estado HID
-            if (s_hid_dev) {
-                bool hid_conn = esp_hidd_dev_connected(s_hid_dev);
-                ESP_LOGI(TAG, "    Estado HID INMEDIATAMENTE después de emparejamiento: %s",
-                         hid_conn ? "CONECTADO ✓" : "NO CONECTADO ✗ (esperando...)");
-            }
+            // ✅ SOLUCIÓN CORRECTA (como ejemplo oficial ESP-IDF):
+            // Setear flag de conexión segura cuando autenticación es exitosa
+            s_sec_conn = true;
+            ESP_LOGI(TAG, "    ✅ CONEXIÓN SEGURA ESTABLECIDA (s_sec_conn=true)");
+            ESP_LOGI(TAG, "    >>> El mouse/keyboard ahora puede enviar reportes HID");
 
             // FIX: Forzar actualización de parámetros de conexión para activar HID
             // Basado en https://github.com/asterics/esp32_mouse_keyboard
@@ -381,6 +387,8 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             ESP_LOGE(TAG, "!!! EMPAREJAMIENTO FALLIDO !!!");
             ESP_LOGE(TAG, "    Código error: 0x%02X", param->ble_security.auth_cmpl.fail_reason);
             s_connected = false;
+            s_sec_conn = false;  // NUEVO: Limpiar flag de conexión segura
+            s_hid_conn_id = 0;   // NUEVO: Limpiar ID de conexión
             s_pairing_completed = false;
             esp_ble_gap_start_advertising(&s_adv_params);
         }
@@ -454,41 +462,32 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
 bool ble_hid_combined_is_connected(void)
 {
-    if (!s_hid_dev) {
-        return false;
-    }
+    // ✅ SOLUCIÓN CORRECTA (basada en ejemplo oficial ESP-IDF):
+    // NO usar esp_hidd_dev_connected() - no es confiable en ESP32
+    // Usar flag s_sec_conn que se setea en ESP_GAP_BLE_AUTH_CMPL_EVT
+    //
+    // Referencia: https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/bluedroid/ble/ble_hid_device_demo/main/ble_hidd_demo_main.c
+    //
+    // El ejemplo oficial usa:
+    // - hid_conn_id: ID de conexión (seteado en ESP_HIDD_CONNECT_EVENT)
+    // - sec_conn: Flag de conexión segura (seteado en ESP_GAP_BLE_AUTH_CMPL_EVT)
+    // - Verifica sec_conn antes de enviar reportes HID
 
-    // FIX CRÍTICO: Verificar el estado REAL del HID device
-    bool hid_connected = esp_hidd_dev_connected(s_hid_dev);
-
-    // DIAGNÓSTICO EXTENSIVO: Log cada verificación (temporalmente)
     static int check_count = 0;
-    static bool last_hid_state = false;
+    static bool last_state = false;
 
-    if (check_count < 50 || hid_connected != last_hid_state) {
-        ESP_LOGI(TAG, "[CHECK #%d] esp_hidd_dev_connected() = %s, s_connected = %s, s_hid_dev = %p",
+    // Log solo en cambios de estado o primeras 10 verificaciones
+    if (check_count < 10 || s_sec_conn != last_state) {
+        ESP_LOGI(TAG, "[CHECK #%d] s_sec_conn=%s, s_connected=%s, s_hid_conn_id=%d",
                  check_count,
-                 hid_connected ? "TRUE ✓" : "FALSE ✗",
+                 s_sec_conn ? "TRUE ✓" : "FALSE ✗",
                  s_connected ? "TRUE" : "FALSE",
-                 s_hid_dev);
+                 s_hid_conn_id);
         check_count++;
     }
 
-    last_hid_state = hid_connected;
-
-    // Sincronizar s_connected con el estado real del HID
-    if (hid_connected && !s_connected) {
-        ESP_LOGI(TAG, "╔════════════════════════════════════════╗");
-        ESP_LOGI(TAG, "║ !!! CONEXION HID DETECTADA !!!        ║");
-        ESP_LOGI(TAG, "║ (sin evento ESP_HIDD_CONNECT)         ║");
-        ESP_LOGI(TAG, "╚════════════════════════════════════════╝");
-        s_connected = true;
-    } else if (!hid_connected && s_connected) {
-        ESP_LOGW(TAG, "!!! DESCONEXION HID DETECTADA - actualizando estado !!!");
-        s_connected = false;
-    }
-
-    return hid_connected;
+    last_state = s_sec_conn;
+    return s_sec_conn;
 }
 
 /* Mouse functions */

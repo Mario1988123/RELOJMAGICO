@@ -201,11 +201,27 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                  param->update_conn_params.latency,
                  param->update_conn_params.timeout);
 
-        // DIAGNÓSTICO: Verificar estado de conexión HID después de actualizar parámetros
+        // DIAGNÓSTICO MEJORADO: Verificar múltiples veces el estado HID
         if (s_hid_dev) {
-            bool connected = esp_hidd_dev_connected(s_hid_dev);
-            ESP_LOGI(TAG, "    >>> Estado HID después de actualizar parámetros: %s",
-                     connected ? "CONECTADO ✓" : "NO CONECTADO ✗");
+            ESP_LOGI(TAG, "    >>> Verificando estado HID (inmediato)...");
+            bool connected_immediate = esp_hidd_dev_connected(s_hid_dev);
+            ESP_LOGI(TAG, "        Inmediato: %s", connected_immediate ? "CONECTADO ✓" : "NO CONECTADO ✗");
+
+            // Dar tiempo al stack BLE para actualizar el estado
+            vTaskDelay(pdMS_TO_TICKS(100));
+
+            ESP_LOGI(TAG, "    >>> Verificando estado HID (después de 100ms)...");
+            bool connected_delayed = esp_hidd_dev_connected(s_hid_dev);
+            ESP_LOGI(TAG, "        Después de 100ms: %s", connected_delayed ? "CONECTADO ✓" : "NO CONECTADO ✗");
+
+            // Si se detecta conexión, actualizar el flag
+            if (connected_delayed && !s_connected) {
+                ESP_LOGI(TAG, "    ╔══════════════════════════════════════╗");
+                ESP_LOGI(TAG, "    ║ CONEXIÓN HID CONFIRMADA!             ║");
+                ESP_LOGI(TAG, "    ║ Actualizando flag s_connected        ║");
+                ESP_LOGI(TAG, "    ╚══════════════════════════════════════╝");
+                s_connected = true;
+            }
         }
         break;
 
@@ -329,24 +345,38 @@ esp_err_t ble_hid_combined_init(const char *device_name, bool use_pin)
 
 bool ble_hid_combined_is_connected(void)
 {
-    // FIX: Confiar SOLO en esp_hidd_dev_connected() como fuente de verdad
-    // El evento ESP_HIDD_CONNECT_EVENT a veces no se dispara después del emparejamiento
-    bool hid_connected = s_hid_dev ? esp_hidd_dev_connected(s_hid_dev) : false;
+    if (!s_hid_dev) {
+        return false;
+    }
+
+    // FIX CRÍTICO: Verificar el estado REAL del HID device
+    bool hid_connected = esp_hidd_dev_connected(s_hid_dev);
+
+    // DIAGNÓSTICO EXTENSIVO: Log cada verificación (temporalmente)
+    static int check_count = 0;
+    static bool last_hid_state = false;
+
+    if (check_count < 50 || hid_connected != last_hid_state) {
+        ESP_LOGI(TAG, "[CHECK #%d] esp_hidd_dev_connected() = %s, s_connected = %s, s_hid_dev = %p",
+                 check_count,
+                 hid_connected ? "TRUE ✓" : "FALSE ✗",
+                 s_connected ? "TRUE" : "FALSE",
+                 s_hid_dev);
+        check_count++;
+    }
+
+    last_hid_state = hid_connected;
 
     // Sincronizar s_connected con el estado real del HID
     if (hid_connected && !s_connected) {
-        ESP_LOGI(TAG, "!!! CONEXION HID DETECTADA (sin evento) - actualizando estado !!!");
+        ESP_LOGI(TAG, "╔════════════════════════════════════════╗");
+        ESP_LOGI(TAG, "║ !!! CONEXION HID DETECTADA !!!        ║");
+        ESP_LOGI(TAG, "║ (sin evento ESP_HIDD_CONNECT)         ║");
+        ESP_LOGI(TAG, "╚════════════════════════════════════════╝");
         s_connected = true;
     } else if (!hid_connected && s_connected) {
         ESP_LOGW(TAG, "!!! DESCONEXION HID DETECTADA - actualizando estado !!!");
         s_connected = false;
-    }
-
-    // Log solo cuando cambia el estado (evitar spam)
-    static bool last_state = false;
-    if (hid_connected != last_state) {
-        ESP_LOGI(TAG, "Estado conexión cambió: %s", hid_connected ? "CONECTADO" : "DESCONECTADO");
-        last_state = hid_connected;
     }
 
     return hid_connected;
@@ -355,47 +385,54 @@ bool ble_hid_combined_is_connected(void)
 /* Mouse functions */
 void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 {
-    // Verificar estado detalladamente
-    static int warning_count = 0;
-    static int attempt_count = 0;
+    static int total_attempts = 0;
+    static int successful_sends = 0;
+    static int failed_sends = 0;
 
     if (!s_hid_dev) {
-        if (warning_count++ < 5) {
+        if (failed_sends++ < 3) {
             ESP_LOGE(TAG, "❌ Mouse move RECHAZADO: s_hid_dev es NULL");
         }
         return;
     }
 
+    // Verificar estado ANTES de enviar
     bool connected = esp_hidd_dev_connected(s_hid_dev);
 
-    // DIAGNÓSTICO: Intentar enviar de todos modos las primeras 3 veces
-    if (!connected && attempt_count < 3) {
-        ESP_LOGW(TAG, "⚠️  HID reporta NO conectado, pero INTENTANDO enviar de todos modos (intento %d/3)...",
-                 attempt_count + 1);
-    } else if (!connected) {
-        if (warning_count++ < 5) {
-            ESP_LOGW(TAG, "❌ Mouse move RECHAZADO: HID no conectado (s_connected=%d, esp_hidd=%d)",
-                     s_connected, connected);
-        }
-        return;
-    }
+    ESP_LOGI(TAG, ">>> INTENTO ENVÍO #%d: dx=%d, dy=%d, wheel=%d",
+             total_attempts + 1, dx, dy, wheel);
+    ESP_LOGI(TAG, "    Estado: s_connected=%d, esp_hidd_dev_connected()=%d, s_hid_dev=%p",
+             s_connected, connected, s_hid_dev);
 
-    // Report format: [Buttons, X, Y, Wheel] - SIN Report ID en el buffer
+    // INTENTAR ENVIAR SIEMPRE (ignorar el estado reportado)
+    // El stack BLE puede estar conectado aunque esp_hidd_dev_connected() retorne false
     uint8_t report[4] = {0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
 
-    ESP_LOGI(TAG, ">>> ENVIANDO Mouse Report: dx=%d, dy=%d, wheel=%d (connected=%d, attempt=%d)",
-             dx, dy, wheel, connected, attempt_count);
-
+    ESP_LOGI(TAG, "    >>> Llamando esp_hidd_dev_input_set()...");
     esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
 
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "❌ Error enviando mouse: %s (0x%x)", esp_err_to_name(ret), ret);
-    } else {
-        ESP_LOGI(TAG, "✅ Mouse report ENVIADO exitosamente!");
-        warning_count = 0;  // Reset warning counter on success
-    }
+    total_attempts++;
 
-    attempt_count++;
+    if (ret != ESP_OK) {
+        failed_sends++;
+        ESP_LOGE(TAG, "    ❌ FALLO: %s (0x%x) - Total fallos: %d/%d",
+                 esp_err_to_name(ret), ret, failed_sends, total_attempts);
+
+        // Si el error es ESP_ERR_INVALID_STATE, podría significar que realmente no está conectado
+        if (ret == ESP_ERR_INVALID_STATE) {
+            ESP_LOGE(TAG, "    ERROR: ESP_ERR_INVALID_STATE - El HID no está listo para enviar");
+        }
+    } else {
+        successful_sends++;
+        ESP_LOGI(TAG, "    ✅ ÉXITO! Report enviado - Total éxitos: %d/%d",
+                 successful_sends, total_attempts);
+
+        // Si logramos enviar pero connected era false, hay un bug en la detección
+        if (!connected) {
+            ESP_LOGW(TAG, "    ⚠️  ADVERTENCIA: Envío exitoso pero esp_hidd_dev_connected() retornó FALSE!");
+            ESP_LOGW(TAG, "    ⚠️  Esto indica un BUG en la detección de conexión HID");
+        }
+    }
 }
 
 void ble_hid_mouse_buttons(bool left, bool right, bool middle)

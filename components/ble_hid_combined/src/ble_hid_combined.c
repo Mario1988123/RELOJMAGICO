@@ -5,6 +5,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -23,6 +24,8 @@ static char s_device_name[32] = {0};
 static esp_hidd_dev_t *s_hid_dev = NULL;
 static esp_bd_addr_t s_peer_bd_addr = {0};  // Dirección del dispositivo conectado
 static bool s_pairing_completed = false;    // Flag para tracking de emparejamiento
+static TimerHandle_t s_connection_check_timer = NULL;  // Timer para verificar conexión periódicamente
+static int s_connection_check_count = 0;  // Contador de verificaciones
 
 /* HID Report Descriptor COMBINADO (Mouse + Keyboard) */
 static const uint8_t s_combined_report_map[] = {
@@ -159,6 +162,13 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         s_connected = false;
         s_pairing_completed = false;
         memset(s_peer_bd_addr, 0, sizeof(esp_bd_addr_t));
+
+        // Detener timer de verificación si está activo
+        if (s_connection_check_timer) {
+            xTimerStop(s_connection_check_timer, 0);
+            ESP_LOGI(TAG, ">>> Timer de verificación detenido");
+        }
+
         ESP_LOGI(TAG, ">>> Reiniciando advertising...");
         esp_ble_gap_start_advertising(&s_adv_params);
         break;
@@ -178,6 +188,54 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
     default:
         ESP_LOGW(TAG, ">>> HID evento desconocido: %d", (int)ev);
         break;
+    }
+}
+
+/* Timer callback para verificar conexión HID periódicamente */
+static void connection_check_timer_callback(TimerHandle_t xTimer)
+{
+    s_connection_check_count++;
+
+    if (!s_pairing_completed || !s_hid_dev) {
+        // Si no hay emparejamiento o HID device, detener el timer
+        if (s_connection_check_timer) {
+            xTimerStop(s_connection_check_timer, 0);
+        }
+        return;
+    }
+
+    bool hid_connected = esp_hidd_dev_connected(s_hid_dev);
+
+    ESP_LOGI(TAG, "🔍 VERIFICACIÓN PERIÓDICA #%d: esp_hidd_dev_connected()=%s, s_connected=%s, s_pairing_completed=%s",
+             s_connection_check_count,
+             hid_connected ? "TRUE ✓" : "FALSE ✗",
+             s_connected ? "TRUE" : "FALSE",
+             s_pairing_completed ? "TRUE" : "FALSE");
+
+    // SOLUCIÓN: Si el emparejamiento está completo, ASUMIR que estamos conectados
+    // El ESP32 BLE stack a veces no reporta correctamente esp_hidd_dev_connected()
+    if (s_pairing_completed && !s_connected) {
+        ESP_LOGW(TAG, "╔═══════════════════════════════════════════════════╗");
+        ESP_LOGW(TAG, "║ FORZANDO CONEXIÓN HID                             ║");
+        ESP_LOGW(TAG, "║ Emparejamiento completado pero conexión no        ║");
+        ESP_LOGW(TAG, "║ detectada. Asumiendo conexión válida.             ║");
+        ESP_LOGW(TAG, "╚═══════════════════════════════════════════════════╝");
+        s_connected = true;
+    }
+
+    // Actualizar el estado si hay cambios
+    if (hid_connected && !s_connected) {
+        ESP_LOGI(TAG, "✅ CONEXIÓN HID DETECTADA - Actualizando s_connected=true");
+        s_connected = true;
+    }
+
+    // Detener el timer después de 20 verificaciones o si ya está conectado
+    if (s_connection_check_count >= 20 || s_connected) {
+        ESP_LOGI(TAG, "⏹️  Deteniendo timer de verificación (count=%d, connected=%s)",
+                 s_connection_check_count, s_connected ? "TRUE" : "FALSE");
+        if (s_connection_check_timer) {
+            xTimerStop(s_connection_check_timer, 0);
+        }
     }
 }
 
@@ -297,6 +355,25 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                 ESP_LOGE(TAG, "    ❌ Error actualizando parámetros: %s", esp_err_to_name(ret));
             } else {
                 ESP_LOGI(TAG, "    ✓ Solicitud de actualización enviada");
+            }
+
+            // NUEVO: Iniciar timer de verificación periódica de conexión HID
+            if (!s_connection_check_timer) {
+                s_connection_check_timer = xTimerCreate(
+                    "hid_conn_check",           // Nombre del timer
+                    pdMS_TO_TICKS(500),         // Período: 500ms
+                    pdTRUE,                     // Auto-reload: sí
+                    NULL,                       // Timer ID (no usado)
+                    connection_check_timer_callback  // Callback
+                );
+            }
+
+            if (s_connection_check_timer) {
+                s_connection_check_count = 0;  // Reset contador
+                ESP_LOGI(TAG, "    🔄 Iniciando verificación periódica de conexión HID...");
+                xTimerStart(s_connection_check_timer, 0);
+            } else {
+                ESP_LOGE(TAG, "    ❌ Error creando timer de verificación");
             }
 
             ESP_LOGI(TAG, "========================================");

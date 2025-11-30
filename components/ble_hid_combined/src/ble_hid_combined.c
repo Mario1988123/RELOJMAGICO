@@ -128,38 +128,36 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         break;
 
     case ESP_HIDD_CONNECT_EVENT:
-        ESP_LOGI(TAG, "╔════════════════════════════════════════════╗");
-        ESP_LOGI(TAG, "║                                            ║");
-        ESP_LOGI(TAG, "║    ✅ HID CONECTADO EXITOSAMENTE! ✅       ║");
-        ESP_LOGI(TAG, "║                                            ║");
-        ESP_LOGI(TAG, "╚════════════════════════════════════════════╝");
+        ESP_LOGI(TAG, "========================================");
+        ESP_LOGI(TAG, ">>> HID CONNECTED SUCCESSFULLY! <<<");
+        ESP_LOGI(TAG, "========================================");
         s_connected = true;
-        // Marcar conexión segura si el host no inicia pairing explícito
+        // Marcar conexion segura si el host no inicia pairing explicito
         if (!s_sec_conn) {
-            ESP_LOGW(TAG, "Conexión HID sin AUTH_CMPL; habilitando tráfico HID de todos modos");
+            ESP_LOGW(TAG, "Conexion HID sin AUTH_CMPL; habilitando trafico HID de todos modos");
             s_sec_conn = true;
         }
-        // NUEVO: Incrementar ID de conexión
+        // NUEVO: Incrementar ID de conexion
         s_hid_conn_id++;
-        ESP_LOGI(TAG, ">>> ID de conexión HID: %d", s_hid_conn_id);
+        ESP_LOGI(TAG, ">>> ID de conexion HID: %d", s_hid_conn_id);
         ESP_LOGI(TAG, ">>> El dispositivo ahora puede enviar eventos de mouse/keyboard");
         break;
 
     case ESP_HIDD_DISCONNECT_EVENT:
-        ESP_LOGW(TAG, "╔════════════════════════════════════════════╗");
-        ESP_LOGW(TAG, "║    ⚠️  HID DESCONECTADO                    ║");
-        ESP_LOGW(TAG, "╚════════════════════════════════════════════╝");
-        ESP_LOGW(TAG, ">>> Razón: %d", ed->disconnect.reason);
+        ESP_LOGW(TAG, "========================================");
+        ESP_LOGW(TAG, ">>> HID DISCONNECTED <<<");
+        ESP_LOGW(TAG, "========================================");
+        ESP_LOGW(TAG, ">>> Razon: %d", ed->disconnect.reason);
         s_connected = false;
-        s_sec_conn = false;  // NUEVO: Limpiar flag de conexión segura
-        s_hid_conn_id = 0;   // NUEVO: Limpiar ID de conexión
+        s_sec_conn = false;  // NUEVO: Limpiar flag de conexion segura
+        s_hid_conn_id = 0;   // NUEVO: Limpiar ID de conexion
         s_pairing_completed = false;
         memset(s_peer_bd_addr, 0, sizeof(esp_bd_addr_t));
 
-        // Detener timer de verificación si está activo
+        // Detener timer de verificacion si esta activo
         if (s_connection_check_timer) {
             xTimerStop(s_connection_check_timer, 0);
-            ESP_LOGI(TAG, ">>> Timer de verificación detenido");
+            ESP_LOGI(TAG, ">>> Timer de verificacion detenido");
         }
 
         ESP_LOGI(TAG, ">>> Reiniciando advertising...");
@@ -199,32 +197,32 @@ static void connection_check_timer_callback(TimerHandle_t xTimer)
 
     bool hid_connected = esp_hidd_dev_connected(s_hid_dev);
 
-    ESP_LOGI(TAG, "🔍 VERIFICACIÓN PERIÓDICA #%d: esp_hidd_dev_connected()=%s, s_connected=%s, s_pairing_completed=%s",
+    ESP_LOGI(TAG, "[CHECK] VERIFICACION PERIODICA #%d: esp_hidd_dev_connected()=%s, s_connected=%s, s_pairing_completed=%s",
              s_connection_check_count,
-             hid_connected ? "TRUE ✓" : "FALSE ✗",
+             hid_connected ? "TRUE" : "FALSE",
              s_connected ? "TRUE" : "FALSE",
              s_pairing_completed ? "TRUE" : "FALSE");
 
-    // SOLUCIÓN: Si el emparejamiento está completo, ASUMIR que estamos conectados
+    // SOLUCION: Si el emparejamiento esta completo, ASUMIR que estamos conectados
     // El ESP32 BLE stack a veces no reporta correctamente esp_hidd_dev_connected()
     if (s_pairing_completed && !s_connected) {
-        ESP_LOGW(TAG, "╔═══════════════════════════════════════════════════╗");
-        ESP_LOGW(TAG, "║ FORZANDO CONEXIÓN HID                             ║");
-        ESP_LOGW(TAG, "║ Emparejamiento completado pero conexión no        ║");
-        ESP_LOGW(TAG, "║ detectada. Asumiendo conexión válida.             ║");
-        ESP_LOGW(TAG, "╚═══════════════════════════════════════════════════╝");
+        ESP_LOGW(TAG, "========================================");
+        ESP_LOGW(TAG, ">>> FORZANDO CONEXION HID <<<");
+        ESP_LOGW(TAG, ">>> Emparejamiento completado pero conexion no detectada");
+        ESP_LOGW(TAG, ">>> Asumiendo conexion valida");
+        ESP_LOGW(TAG, "========================================");
         s_connected = true;
     }
 
     // Actualizar el estado si hay cambios
     if (hid_connected && !s_connected) {
-        ESP_LOGI(TAG, "✅ CONEXIÓN HID DETECTADA - Actualizando s_connected=true");
+        ESP_LOGI(TAG, "[OK] CONEXION HID DETECTADA - Actualizando s_connected=true");
         s_connected = true;
     }
 
-    // Detener el timer después de 20 verificaciones o si ya está conectado
+    // Detener el timer despues de 20 verificaciones o si ya esta conectado
     if (s_connection_check_count >= 20 || s_connected) {
-        ESP_LOGI(TAG, "⏹️  Deteniendo timer de verificación (count=%d, connected=%s)",
+        ESP_LOGI(TAG, "[STOP] Deteniendo timer de verificacion (count=%d, connected=%s)",
                  s_connection_check_count, s_connected ? "TRUE" : "FALSE");
         if (s_connection_check_timer) {
             xTimerStop(s_connection_check_timer, 0);
@@ -232,7 +230,7 @@ static void connection_check_timer_callback(TimerHandle_t xTimer)
     }
 }
 
-/* Callback GAP - Aceptar emparejamiento automáticamente */
+/* Callback GAP - Aceptar emparejamiento automaticamente */
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     ESP_LOGI(TAG, "!!! GAP EVENT: %d !!!", (int)event);
@@ -255,7 +253,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         break;
 
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-        ESP_LOGI(TAG, ">>> Parámetros de conexión actualizados");
+        ESP_LOGI(TAG, ">>> Parametros de conexion actualizados");
         ESP_LOGI(TAG, "    Status: %d, Min interval: %d, Max interval: %d, Latency: %d, Timeout: %d",
                  param->update_conn_params.status,
                  param->update_conn_params.min_int,
@@ -263,25 +261,25 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                  param->update_conn_params.latency,
                  param->update_conn_params.timeout);
 
-        // DIAGNÓSTICO MEJORADO: Verificar múltiples veces el estado HID
+        // DIAGNOSTICO MEJORADO: Verificar multiples veces el estado HID
         if (s_hid_dev) {
             ESP_LOGI(TAG, "    >>> Verificando estado HID (inmediato)...");
             bool connected_immediate = esp_hidd_dev_connected(s_hid_dev);
-            ESP_LOGI(TAG, "        Inmediato: %s", connected_immediate ? "CONECTADO ✓" : "NO CONECTADO ✗");
+            ESP_LOGI(TAG, "        Inmediato: %s", connected_immediate ? "CONECTADO" : "NO CONECTADO");
 
             // Dar tiempo al stack BLE para actualizar el estado
             vTaskDelay(pdMS_TO_TICKS(100));
 
-            ESP_LOGI(TAG, "    >>> Verificando estado HID (después de 100ms)...");
+            ESP_LOGI(TAG, "    >>> Verificando estado HID (despues de 100ms)...");
             bool connected_delayed = esp_hidd_dev_connected(s_hid_dev);
-            ESP_LOGI(TAG, "        Después de 100ms: %s", connected_delayed ? "CONECTADO ✓" : "NO CONECTADO ✗");
+            ESP_LOGI(TAG, "        Despues de 100ms: %s", connected_delayed ? "CONECTADO" : "NO CONECTADO");
 
-            // Si se detecta conexión, actualizar el flag
+            // Si se detecta conexion, actualizar el flag
             if (connected_delayed && !s_connected) {
-                ESP_LOGI(TAG, "    ╔══════════════════════════════════════╗");
-                ESP_LOGI(TAG, "    ║ CONEXIÓN HID CONFIRMADA!             ║");
-                ESP_LOGI(TAG, "    ║ Actualizando flag s_connected        ║");
-                ESP_LOGI(TAG, "    ╚══════════════════════════════════════╝");
+                ESP_LOGI(TAG, "    ========================================");
+                ESP_LOGI(TAG, "    >>> CONEXION HID CONFIRMADA!");
+                ESP_LOGI(TAG, "    >>> Actualizando flag s_connected");
+                ESP_LOGI(TAG, "    ========================================");
                 s_connected = true;
             }
         }
@@ -293,13 +291,13 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         break;
 
     case ESP_GAP_BLE_NC_REQ_EVT:
-        ESP_LOGI(TAG, "!!! Confirmación numérica solicitada - ACEPTANDO AUTOMATICAMENTE !!!");
-        ESP_LOGI(TAG, "    Código: %06" PRIu32, param->ble_security.key_notif.passkey);
+        ESP_LOGI(TAG, "!!! Confirmacion numerica solicitada - ACEPTANDO AUTOMATICAMENTE !!!");
+        ESP_LOGI(TAG, "    Codigo: %06" PRIu32, param->ble_security.key_notif.passkey);
         esp_ble_confirm_reply(param->ble_security.ble_req.bd_addr, true);
         break;
 
     case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
-        ESP_LOGI(TAG, "Passkey notificación: %06" PRIu32, param->ble_security.key_notif.passkey);
+        ESP_LOGI(TAG, "Passkey notificacion: %06" PRIu32, param->ble_security.key_notif.passkey);
         break;
 
     case ESP_GAP_BLE_KEY_EVT:
@@ -314,7 +312,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         if (param->ble_security.auth_cmpl.success) {
             ESP_LOGI(TAG, "========================================");
             ESP_LOGI(TAG, ">>> EMPAREJAMIENTO EXITOSO! <<<");
-            ESP_LOGI(TAG, "    Dirección: %02X:%02X:%02X:%02X:%02X:%02X",
+            ESP_LOGI(TAG, "    Direccion: %02X:%02X:%02X:%02X:%02X:%02X",
                      param->ble_security.auth_cmpl.bd_addr[0],
                      param->ble_security.auth_cmpl.bd_addr[1],
                      param->ble_security.auth_cmpl.bd_addr[2],
@@ -322,19 +320,19 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                      param->ble_security.auth_cmpl.bd_addr[4],
                      param->ble_security.auth_cmpl.bd_addr[5]);
 
-            // Guardar dirección del peer
+            // Guardar direccion del peer
             memcpy(s_peer_bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
             s_pairing_completed = true;
 
-            // ✅ SOLUCIÓN CORRECTA (como ejemplo oficial ESP-IDF):
-            // Setear flag de conexión segura cuando autenticación es exitosa
+            // SOLUCION CORRECTA (como ejemplo oficial ESP-IDF):
+            // Setear flag de conexion segura cuando autenticacion es exitosa
             s_sec_conn = true;
-            ESP_LOGI(TAG, "    ✅ CONEXIÓN SEGURA ESTABLECIDA (s_sec_conn=true)");
+            ESP_LOGI(TAG, "    [OK] CONEXION SEGURA ESTABLECIDA (s_sec_conn=true)");
             ESP_LOGI(TAG, "    >>> El mouse ahora puede enviar reportes HID");
 
-            // FIX: Forzar actualización de parámetros de conexión para activar HID
+            // FIX: Forzar actualizacion de parametros de conexion para activar HID
             // Basado en https://github.com/asterics/esp32_mouse_keyboard
-            ESP_LOGI(TAG, "    >>> FORZANDO actualización de parámetros de conexión...");
+            ESP_LOGI(TAG, "    >>> FORZANDO actualizacion de parametros de conexion...");
             esp_ble_conn_update_params_t conn_params;
             memcpy(conn_params.bda, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
             conn_params.min_int = 6;   // 6 * 1.25ms = 7.5ms
@@ -344,17 +342,17 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
             esp_err_t ret = esp_ble_gap_update_conn_params(&conn_params);
             if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "    ❌ Error actualizando parámetros: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "    [ERROR] Error actualizando parametros: %s", esp_err_to_name(ret));
             } else {
-                ESP_LOGI(TAG, "    ✓ Solicitud de actualización enviada");
+                ESP_LOGI(TAG, "    [OK] Solicitud de actualizacion enviada");
             }
 
-            // NUEVO: Iniciar timer de verificación periódica de conexión HID
+            // NUEVO: Iniciar timer de verificacion periodica de conexion HID
             if (!s_connection_check_timer) {
                 s_connection_check_timer = xTimerCreate(
                     "hid_conn_check",           // Nombre del timer
-                    pdMS_TO_TICKS(500),         // Período: 500ms
-                    pdTRUE,                     // Auto-reload: sí
+                    pdMS_TO_TICKS(500),         // Periodo: 500ms
+                    pdTRUE,                     // Auto-reload: si
                     NULL,                       // Timer ID (no usado)
                     connection_check_timer_callback  // Callback
                 );
@@ -362,19 +360,19 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
             if (s_connection_check_timer) {
                 s_connection_check_count = 0;  // Reset contador
-                ESP_LOGI(TAG, "    🔄 Iniciando verificación periódica de conexión HID...");
+                ESP_LOGI(TAG, "    [START] Iniciando verificacion periodica de conexion HID...");
                 xTimerStart(s_connection_check_timer, 0);
             } else {
-                ESP_LOGE(TAG, "    ❌ Error creando timer de verificación");
+                ESP_LOGE(TAG, "    [ERROR] Error creando timer de verificacion");
             }
 
             ESP_LOGI(TAG, "========================================");
         } else {
             ESP_LOGE(TAG, "!!! EMPAREJAMIENTO FALLIDO !!!");
-            ESP_LOGE(TAG, "    Código error: 0x%02X", param->ble_security.auth_cmpl.fail_reason);
+            ESP_LOGE(TAG, "    Codigo error: 0x%02X", param->ble_security.auth_cmpl.fail_reason);
             s_connected = false;
-            s_sec_conn = false;  // NUEVO: Limpiar flag de conexión segura
-            s_hid_conn_id = 0;   // NUEVO: Limpiar ID de conexión
+            s_sec_conn = false;  // NUEVO: Limpiar flag de conexion segura
+            s_hid_conn_id = 0;   // NUEVO: Limpiar ID de conexion
             s_pairing_completed = false;
             esp_ble_gap_start_advertising(&s_adv_params);
         }
@@ -468,7 +466,7 @@ bool ble_hid_combined_is_connected(void)
     if (check_count < 10 || hid_connected != last_state) {
         ESP_LOGI(TAG, "[CHECK #%d] conn=%s (sec_conn=%s, hid_conn_id=%d)",
                  check_count,
-                 hid_connected ? "TRUE ✓" : "FALSE ✗",
+                 hid_connected ? "TRUE" : "FALSE",
                  s_sec_conn ? "TRUE" : "FALSE",
                  s_hid_conn_id);
         check_count++;
@@ -487,14 +485,14 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 
     if (!ble_hid_combined_is_connected()) {
         if (failed_sends++ < 3) {
-            ESP_LOGW(TAG, "⚠️ Mouse move ignorado: HID no conectado");
+            ESP_LOGW(TAG, "[WARN] Mouse move ignorado: HID no conectado");
         }
         return;
     }
 
     if (!s_hid_dev) {
         if (failed_sends++ < 3) {
-            ESP_LOGE(TAG, "❌ Mouse move RECHAZADO: s_hid_dev es NULL");
+            ESP_LOGE(TAG, "[ERROR] Mouse move RECHAZADO: s_hid_dev es NULL");
         }
         return;
     }
@@ -518,22 +516,22 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
 
     if (ret != ESP_OK) {
         failed_sends++;
-        ESP_LOGE(TAG, "    ❌ FALLO: %s (0x%x) - Total fallos: %d/%d",
+        ESP_LOGE(TAG, "    [FAIL] FALLO: %s (0x%x) - Total fallos: %d/%d",
                  esp_err_to_name(ret), ret, failed_sends, total_attempts);
 
-        // Si el error es ESP_ERR_INVALID_STATE, podría significar que realmente no está conectado
+        // Si el error es ESP_ERR_INVALID_STATE, podria significar que realmente no esta conectado
         if (ret == ESP_ERR_INVALID_STATE) {
-            ESP_LOGE(TAG, "    ERROR: ESP_ERR_INVALID_STATE - El HID no está listo para enviar");
+            ESP_LOGE(TAG, "    [ERROR] ESP_ERR_INVALID_STATE - El HID no esta listo para enviar");
         }
     } else {
         successful_sends++;
-        ESP_LOGI(TAG, "    ✅ ÉXITO! Report enviado - Total éxitos: %d/%d",
+        ESP_LOGI(TAG, "    [OK] EXITO! Report enviado - Total exitos: %d/%d",
                  successful_sends, total_attempts);
 
-        // Si logramos enviar pero connected era false, hay un bug en la detección
+        // Si logramos enviar pero connected era false, hay un bug en la deteccion
         if (!connected) {
-            ESP_LOGW(TAG, "    ⚠️  ADVERTENCIA: Envío exitoso pero esp_hidd_dev_connected() retornó FALSE!");
-            ESP_LOGW(TAG, "    ⚠️  Esto indica un BUG en la detección de conexión HID");
+            ESP_LOGW(TAG, "    [WARN] ADVERTENCIA: Envio exitoso pero esp_hidd_dev_connected() retorno FALSE!");
+            ESP_LOGW(TAG, "    [WARN] Esto indica un BUG en la deteccion de conexion HID");
         }
     }
 }

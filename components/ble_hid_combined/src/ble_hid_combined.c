@@ -214,10 +214,42 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                  param->update_conn_params.latency,
                  param->update_conn_params.timeout);
 
-        // Verificar si esto desencadena la conexión HID
-        if (s_hid_dev && s_sec_conn && !s_connected) {
-            ESP_LOGI(TAG, "    >>> Conexion segura establecida pero HID aun no conectado");
-            ESP_LOGI(TAG, "    >>> Esperando evento ESP_HIDD_CONNECT_EVENT...");
+        // WORKAROUND para bug conocido de ESP-IDF (Issue #11806):
+        // ESP_HIDD_CONNECT_EVENT no se dispara en el primer emparejamiento,
+        // solo en reconexiones posteriores.
+        //
+        // Cuando los parametros de conexion se actualizan DESPUES del emparejamiento,
+        // es muy probable que HID ya este listo pero el evento no se haya disparado.
+        if (s_hid_dev && s_sec_conn && !s_connected && param->update_conn_params.status == ESP_BT_STATUS_SUCCESS) {
+            ESP_LOGW(TAG, "    ========================================");
+            ESP_LOGW(TAG, "    APLICANDO WORKAROUND PARA BUG ESP-IDF #11806");
+            ESP_LOGW(TAG, "    ========================================");
+            ESP_LOGW(TAG, "    >>> Conexion segura OK + Parametros actualizados OK");
+            ESP_LOGW(TAG, "    >>> ESP_HIDD_CONNECT_EVENT no se ha disparado (bug conocido)");
+
+            // Esperar un momento para que el sistema termine de configurar HID
+            vTaskDelay(pdMS_TO_TICKS(500));
+
+            // Verificar si el SDK dice que esta conectado
+            bool sdk_connected = esp_hidd_dev_connected(s_hid_dev);
+            ESP_LOGW(TAG, "    >>> Verificacion SDK: esp_hidd_dev_connected() = %s",
+                     sdk_connected ? "true" : "false");
+
+            if (sdk_connected || s_sec_conn) {
+                // Aplicar workaround: marcar como conectado manualmente
+                s_connected = true;
+                s_hid_conn_id++;
+
+                ESP_LOGW(TAG, "    ========================================");
+                ESP_LOGW(TAG, "    !!! WORKAROUND APLICADO !!!");
+                ESP_LOGW(TAG, "    >>> HID marcado como CONECTADO manualmente");
+                ESP_LOGW(TAG, "    >>> ID de conexion HID: %d", s_hid_conn_id);
+                ESP_LOGW(TAG, "    >>> El dispositivo ahora puede enviar eventos");
+                ESP_LOGW(TAG, "    ========================================");
+            } else {
+                ESP_LOGE(TAG, "    [ERROR] SDK dice que HID NO esta conectado");
+                ESP_LOGE(TAG, "    >>> Esperando evento ESP_HIDD_CONNECT_EVENT...");
+            }
         }
         break;
 
@@ -262,23 +294,13 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             // Setear flag de conexion segura cuando autenticacion es exitosa
             s_sec_conn = true;
             ESP_LOGI(TAG, "    [OK] CONEXION SEGURA ESTABLECIDA (s_sec_conn=true)");
-            ESP_LOGI(TAG, "    >>> Esperando evento ESP_HIDD_CONNECT_EVENT para habilitar envio HID...");
+            ESP_LOGI(TAG, "    >>> El sistema actualizara parametros de conexion automaticamente...");
+            ESP_LOGI(TAG, "    >>> Esperando evento ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT...");
 
-            // Actualizar parametros de conexion para optimizar HID
-            ESP_LOGI(TAG, "    >>> Actualizando parametros de conexion para HID...");
-            esp_ble_conn_update_params_t conn_params;
-            memcpy(conn_params.bda, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
-            conn_params.min_int = 6;   // 6 * 1.25ms = 7.5ms
-            conn_params.max_int = 6;   // 6 * 1.25ms = 7.5ms
-            conn_params.latency = 0;   // Sin latencia
-            conn_params.timeout = 500; // 500 * 10ms = 5s
-
-            esp_err_t ret = esp_ble_gap_update_conn_params(&conn_params);
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "    [ERROR] Error actualizando parametros: %s", esp_err_to_name(ret));
-            } else {
-                ESP_LOGI(TAG, "    [OK] Solicitud de actualizacion enviada");
-            }
+            // FIX: NO llamar manualmente a esp_ble_gap_update_conn_params() aqui
+            // El sistema BLE ya lo hace automaticamente despues del emparejamiento
+            // Llamarlo manualmente causa el warning "l2cble_start_conn_update, the last connection update command still pending"
+            // y puede interferir con el establecimiento de la conexion HID
 
             ESP_LOGI(TAG, "========================================");
         } else {

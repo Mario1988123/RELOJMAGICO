@@ -124,11 +124,6 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
         case ESP_HIDD_OUTPUT_EVENT: event_name = "OUTPUT"; break;
         case ESP_HIDD_FEATURE_EVENT: event_name = "FEATURE"; break;
         case ESP_HIDD_STOP_EVENT: event_name = "STOP"; break;
-        case ESP_HIDD_GET_REPORT_EVT: event_name = "GET_REPORT"; break;
-        case ESP_HIDD_SET_REPORT_EVT: event_name = "SET_REPORT"; break;
-        case ESP_HIDD_SET_PROTOCOL_EVT: event_name = "SET_PROTOCOL"; break;
-        case ESP_HIDD_INTR_DATA_EVT: event_name = "INTR_DATA"; break;
-        case ESP_HIDD_VC_UNPLUG_EVT: event_name = "VC_UNPLUG"; break;
         default: break;
     }
     ESP_LOGI(TAG, "!!! HID EVENT: %s (id=%d) !!!", event_name, (int)ev);
@@ -179,18 +174,6 @@ static void hid_event_handler(void *handler_arg, esp_event_base_t base,
 
     case ESP_HIDD_STOP_EVENT:
         ESP_LOGI(TAG, ">>> HID STOP EVENT");
-        break;
-
-    case ESP_HIDD_GET_REPORT_EVT:
-        ESP_LOGI(TAG, ">>> HID GET_REPORT EVENT");
-        break;
-
-    case ESP_HIDD_SET_REPORT_EVT:
-        ESP_LOGI(TAG, ">>> HID SET_REPORT EVENT");
-        break;
-
-    case ESP_HIDD_SET_PROTOCOL_EVT:
-        ESP_LOGI(TAG, ">>> HID SET_PROTOCOL EVENT");
         break;
 
     default:

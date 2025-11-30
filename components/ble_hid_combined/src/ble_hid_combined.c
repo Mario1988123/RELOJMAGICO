@@ -235,7 +235,9 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             ESP_LOGW(TAG, "    >>> Verificacion SDK: esp_hidd_dev_connected() = %s",
                      sdk_connected ? "true" : "false");
 
-            if (sdk_connected || s_sec_conn) {
+            // SOLO aplicar workaround si el SDK confirma la conexion HID
+            // No asumir conexion HID basandose solo en emparejamiento exitoso
+            if (sdk_connected) {
                 // Aplicar workaround: marcar como conectado manualmente
                 s_connected = true;
                 s_hid_conn_id++;
@@ -247,8 +249,8 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                 ESP_LOGW(TAG, "    >>> El dispositivo ahora puede enviar eventos");
                 ESP_LOGW(TAG, "    ========================================");
             } else {
-                ESP_LOGE(TAG, "    [ERROR] SDK dice que HID NO esta conectado");
-                ESP_LOGE(TAG, "    >>> Esperando evento ESP_HIDD_CONNECT_EVENT...");
+                ESP_LOGW(TAG, "    [INFO] SDK todavia no reporta conexion HID");
+                ESP_LOGW(TAG, "    >>> Esperando evento ESP_HIDD_CONNECT_EVENT...");
             }
         }
         break;
@@ -391,16 +393,21 @@ bool ble_hid_combined_is_connected(void)
     // Usar el estado del SDK como fuente de verdad
     bool sdk_connected = esp_hidd_dev_connected(s_hid_dev);
 
-    // Si hay discrepancia, logearlo
+    // Si hay discrepancia, logearlo y SINCRONIZAR con el SDK
     if (sdk_connected != s_connected) {
         ESP_LOGW(TAG, "[ESTADO INCONSISTENTE] SDK dice %s pero s_connected=%s",
                  sdk_connected ? "CONECTADO" : "DESCONECTADO",
                  s_connected ? "TRUE" : "FALSE");
+
+        // Sincronizar nuestro estado interno con el SDK
+        // El SDK es la fuente de verdad definitiva
+        s_connected = sdk_connected;
+        ESP_LOGW(TAG, ">>> Sincronizando s_connected con SDK: %s",
+                 s_connected ? "TRUE" : "FALSE");
     }
 
-    // Retornar el OR de ambos estados para máxima compatibilidad
-    // Si cualquiera dice conectado, asumir conectado
-    return s_connected || sdk_connected;
+    // Retornar el estado del SDK (fuente de verdad)
+    return sdk_connected;
 }
 
 /* Mouse functions */

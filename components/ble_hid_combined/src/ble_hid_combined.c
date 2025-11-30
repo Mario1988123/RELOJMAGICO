@@ -29,12 +29,13 @@ static bool s_pairing_completed = false;    // Flag para tracking de emparejamie
 static TimerHandle_t s_connection_check_timer = NULL;  // Timer para verificar conexión periódicamente
 static int s_connection_check_count = 0;  // Contador de verificaciones
 
-/* HID Report Descriptor SOLO MOUSE (mayor compatibilidad) */
+/* HID Report Descriptor MOUSE con Report ID (máxima compatibilidad) */
 static const uint8_t s_combined_report_map[] = {
-    // Mouse - SIN Report ID para mayor compatibilidad
+    // Mouse - CON Report ID 0x01 para compatibilidad universal
     0x05, 0x01,       // Usage Page (Generic Desktop)
     0x09, 0x02,       // Usage (Mouse)
     0xA1, 0x01,       // Collection (Application)
+    0x85, 0x01,       //   Report ID (1) - IMPORTANTE para compatibilidad
     0x09, 0x01,       //   Usage (Pointer)
     0xA1, 0x00,       //   Collection (Physical)
     0x05, 0x09,       //     Usage Page (Buttons)
@@ -506,13 +507,12 @@ void ble_hid_mouse_move(int8_t dx, int8_t dy, int8_t wheel)
     ESP_LOGI(TAG, "    Estado: s_connected=%d, esp_hidd_dev_connected()=%d, s_hid_dev=%p",
              s_connected, connected, s_hid_dev);
 
-    // SIN Report ID en el descriptor, así que el report es: [Buttons, X, Y, Wheel]
+    // Formato: [Buttons, X, Y, Wheel]
     uint8_t report[4] = {0x00, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel};
 
     ESP_LOGI(TAG, "    >>> Llamando esp_hidd_dev_input_set()...");
-    // Report ID = 0 (sin Report ID en el descriptor)
-    // IMPORTANTE: NO cambiar a 0x01 - el descriptor NO tiene Report IDs
-    esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0, report, sizeof(report));
+    // Report ID = 0x01 (definido en el descriptor con 0x85, 0x01)
+    esp_err_t ret = esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
 
     total_attempts++;
 
@@ -547,9 +547,10 @@ void ble_hid_mouse_buttons(bool left, bool right, bool middle)
     if (right) buttons |= 0x02;
     if (middle) buttons |= 0x04;
 
-    // Report format: [Buttons, X, Y, Wheel] - SIN Report ID
+    // Report format: [Buttons, X, Y, Wheel]
     uint8_t report[4] = {buttons, 0x00, 0x00, 0x00};
-    esp_hidd_dev_input_set(s_hid_dev, 0, 0, report, sizeof(report));
+    // Report ID = 0x01 (Mouse)
+    esp_hidd_dev_input_set(s_hid_dev, 0, 0x01, report, sizeof(report));
 
     ESP_LOGI(TAG, "✓ Mouse buttons: L=%d R=%d M=%d (0x%02X)", left, right, middle, buttons);
 }

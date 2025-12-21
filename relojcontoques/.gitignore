@@ -1,0 +1,13 @@
+# Build directories
+build/
+sdkconfig
+sdkconfig.old
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# Dependencies
+managed_components/
+dependencies.lock

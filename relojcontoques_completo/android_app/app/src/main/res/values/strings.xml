@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Reloj Toques</string>
+    <string name="start_scanning">Iniciar Escaneo</string>
+    <string name="stop_scanning">Detener Escaneo</string>
+    <string name="scanning">Escaneando WiFi…</string>
+    <string name="stopped">Escaneo detenido</string>
+    <string name="card_received">Carta recibida: %1$s</string>
+    <string name="no_cards">Ninguna carta recibida aún</string>
+    <string name="history">Historial</string>
+    <string name="permissions_needed">Se necesitan permisos de ubicación y WiFi</string>
+</resources>

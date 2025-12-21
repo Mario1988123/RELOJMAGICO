@@ -1,0 +1,27 @@
+# Android
+android_app/build/
+android_app/app/build/
+android_app/.gradle/
+android_app/local.properties
+android_app/.idea/
+android_app/*.iml
+android_app/.DS_Store
+android_app/captures/
+android_app/.externalNativeBuild/
+android_app/.cxx/
+
+# Arduino/ESP32
+esp32_arduino/*.bin
+esp32_arduino/*.elf
+esp32_arduino/*.map
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

@@ -2,6 +2,8 @@
 
 Sistema para transmitir cartas de poker mediante toques en un reloj ESP32-S3. Las cartas se envían por WiFi usando beacons y se visualizan en una app Android.
 
+**APK compilado automáticamente disponible en GitHub Actions.**
+
 ## 🎯 Cómo Funciona
 
 1. **Dar toques en el reloj** para seleccionar palo (1-4 toques)
